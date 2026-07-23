@@ -115,3 +115,104 @@ so nobody mistakes a green semgrep run for full baseline coverage:
 - **Prepared-statement dynamic `IN (...)` and `ORDER BY` whitelisting (§2)** — a `?`-list or a
   whitelisted column is correct; distinguishing it from interpolation reliably needs semantic
   reasoning beyond the coarse `sqli-string-interpolation` shape.
+
+---
+
+# Python rules (`python-baseline.yml`)
+
+A companion ruleset covering the Python-specific insecure patterns the PHP-first baseline does not
+enumerate directly. Same stance: **precision-with-some-false-positives over misses**; noisy rules
+are WARNING/INFO and say so in the message. § numbers map to the closest `SECURITY_BASELINE.md`
+section (the baseline is PHP-shaped, so several Python sinks map to the nearest conceptual §
+plus a CWE for precision). All rules are `languages: [python]`.
+
+## Rule catalog
+
+| Rule id | Baseline § | Severity | Enforces / detects |
+|---|---|---|---|
+| `py-sqli-format` | §2 Database access | ERROR | Dynamic SQL (f-string / `%` / `.format()` / `+`) passed to `.execute()`/`.executemany()`, or assembled into a `sql`/`query`/`stmt`/`statement`-named variable — use parameterized queries. CWE-89. |
+| `py-command-injection` | §8a (command-injection) | ERROR | `os.system()`/`os.popen()` on a non-literal, or `subprocess.*(shell=True)` with a non-literal command. Static literals excluded. CWE-78. |
+| `py-eval-exec` | §8a | ERROR | `eval()`/`exec()` on a non-literal expression — arbitrary code execution. Static literals excluded. CWE-95. |
+| `py-unsafe-deserialization` | §8a (code-injection) | ERROR | `pickle`/`cPickle`/`marshal` `load*()`, or one-arg `yaml.load()` (FullLoader) — arbitrary object construction on load. `safe_load`/`Loader=SafeLoader` not flagged. CWE-502. |
+| `py-tls-verify-disabled` | §8 Transport | WARNING | `requests.<verb>(..., verify=False)` or `session.<verb>(..., verify=False)` — disabled TLS verification (MITM). May be intentional for internal CAs — review. CWE-295. |
+| `py-hardcoded-secret` | §1 Secrets & config | WARNING | Non-empty string **literal** assigned to a `password`/`passwd`/`secret`/`api_key`/`token`-named var. `os.getenv`/`os.environ`/empty-string RHS excluded. Complements gitleaks. CWE-798. |
+| `py-flask-debug` | §9 / §12 | WARNING | `*.run(..., debug=True, ...)` — Flask/Werkzeug debugger is RCE if reachable + leaks tracebacks. CWE-489. |
+| `py-weak-hash-password` | §5 (crypto) | WARNING | `hashlib.md5`/`sha1` / `hashlib.new("md5"/"sha1")` — broken for passwords/tokens/signatures (fine for checksums; message says so). CWE-328. |
+| `py-assert-security` | §9 | WARNING | `assert ...` used for a runtime check — stripped under `python -O`. Noisy (flags every assert); message says so. CWE-617. |
+| `py-jinja-autoescape-off` | §3 Output/XSS | WARNING | `Environment(..., autoescape=False)` / `jinja2.Environment(..., autoescape=False)` — unescaped template output (XSS). CWE-79. |
+
+**Python rule count: 10.**
+
+## Test fixtures
+
+Native semgrep fixtures live in `tests/py_*.py`, same annotation convention (`# ruleid:` /
+`# ok:`). Every rule has ≥1 positive and ≥1 negative. All secret values are OBVIOUS FAKES
+(`REDACTED_FAKE`). Fixtures are deliberately-insecure test code, each labeled "NOT production code."
+
+| Fixture | Rule exercised |
+|---|---|
+| `tests/py_sqli.py` | `py-sqli-format` |
+| `tests/py_cmdi.py` | `py-command-injection` |
+| `tests/py_eval.py` | `py-eval-exec` |
+| `tests/py_deser.py` | `py-unsafe-deserialization` |
+| `tests/py_tls.py` | `py-tls-verify-disabled` |
+| `tests/py_secrets.py` | `py-hardcoded-secret` |
+| `tests/py_flask.py` | `py-flask-debug` |
+| `tests/py_hash.py` | `py-weak-hash-password` |
+| `tests/py_assert.py` | `py-assert-security` |
+| `tests/py_jinja.py` | `py-jinja-autoescape-off` |
+
+Run from the `rules/` directory:
+
+```
+semgrep --test --config python-baseline.yml tests/
+```
+
+> **`semgrep --test` run is PENDING** (semgrep not installed in the authoring environment). Rules and
+> fixtures were written by hand and have **not** been executed. Run the command above before relying
+> on the ruleset.
+
+### Patterns to double-check on that first run
+
+- **f-string interpolation `f"...{...}..."`** — used in `py-sqli-format` (both the `.execute()` and
+  the `$Q = f"..."` branches). This is the single least-certain construct in the file: confirm
+  semgrep matches an f-string containing at least one `{ }` interpolation, and that the plain-literal
+  `ok` cases (a static string as `.execute()`'s first arg) are correctly NOT matched. If it misparses,
+  fall back to a bare `$CUR.execute(f"...")` (accepting the rare constant-f-string false positive).
+- **`pattern-not` literal-exclusion idiom** — `py-command-injection` and `py-eval-exec` express
+  "non-literal argument" as `pattern: f($X)` **minus** `pattern-not: f("...")`. Confirm `"..."`
+  excludes only string literals (so `os.system(cmd)`, `os.system("a"+b)`, `eval(x)` still fire while
+  `os.system("ls")`, `eval("2+2")` do not). Deep-expr `<...>` was deliberately avoided here per the
+  known statement-position parser bug.
+- **Nested `patterns` inside `pattern-either`** — `py-command-injection` nests per-sink `patterns`
+  blocks (each a positive + its `pattern-not`s) under one `pattern-either`. Valid semgrep, but verify
+  the nesting evaluates per-branch as intended.
+- **`subprocess.*(shell=True)` keyword matching** — `subprocess.run($CMD, ..., shell=True, ...)`
+  relies on `...` matching the `shell=True` kwarg in any position; confirm, and confirm the
+  literal-first-arg `ok` case (`subprocess.run("ls -la", shell=True)`) is excluded by the paired
+  `pattern-not`.
+- **`yaml.load($X)` single-arg** — depends on `f($X)` matching exactly one argument, so the two-arg
+  `yaml.load(raw, Loader=yaml.SafeLoader)` `ok` case does NOT match. Confirm arity behavior.
+- **`py-hardcoded-secret` value regex** `^['"].+['"]$` — same idiom as the PHP `hardcoded-secret-define`
+  rule: it fires only when the RHS metavariable's source text starts/ends with a quote (a string
+  literal), which is also what excludes `os.getenv(...)` and `""`. Confirm semgrep exposes the RHS
+  source text with surrounding quotes to `metavariable-regex` (the PHP rule assumes the same).
+- **Metavariable method receivers** (`$SESSION.get`, `$APP.run`, `$CUR.execute`, `$Q`) — intentionally
+  broad to catch session objects / arbitrary app handles. Expected trade-off: `py-flask-debug` and
+  `py-tls-verify-disabled` may match a non-Flask `.run(debug=True)` or a non-requests
+  `.get(..., verify=False)`. Both are WARNING and their messages say to confirm the receiver.
+
+### Python items left to the LLM stage (not covered by patterns)
+
+- **Taint provenance for `py-sqli-format`/`py-command-injection`** — the rules flag the dynamic-build
+  *shape*, not whether the interpolated value is actually attacker-controlled. A constant f-string or
+  a fully-internal command is a possible false positive; whether input is tainted is a dataflow
+  question left to review.
+- **Weak-hash *purpose* (`py-weak-hash-password`)** — MD5/SHA-1 for a cache key/ETag is fine; for a
+  password/token/signature it is a real bug. The pattern cannot tell which; the message asks the
+  reviewer to judge.
+- **`assert`-for-validation intent (`py-assert-security`)** — flags every `assert`; distinguishing a
+  security/validation assert from a test-only invariant needs human judgment.
+- **Default-insecure Jinja `Environment()`** — an `Environment()` with *no* `autoescape` argument
+  defaults to unescaped in older/base configs, but proving that *absence* across constructors is not a
+  single-line pattern; only the explicit `autoescape=False` is flagged.

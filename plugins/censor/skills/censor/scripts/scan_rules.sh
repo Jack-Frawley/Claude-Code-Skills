@@ -7,7 +7,9 @@
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-RULES="$SCRIPT_DIR/../rules/web-security-baseline.yml"
+# The rules DIRECTORY — semgrep loads every *.yml in it (PHP + Python + JS rulesets),
+# so new language rulesets are picked up automatically.
+RULES="$SCRIPT_DIR/../rules"
 
 SRC="${1:-}"
 if [ -z "$SRC" ] || [ "$SRC" = "-h" ] || [ "$SRC" = "--help" ]; then
@@ -22,8 +24,8 @@ fi
 JSON_OUT=""
 if [ "${2:-}" = "--json" ]; then JSON_OUT="${3:-}"; fi
 
-if [ ! -f "$RULES" ]; then
-  echo "scan_rules.sh: ruleset not found at $RULES" >&2
+if [ ! -d "$RULES" ]; then
+  echo "scan_rules.sh: rules directory not found at $RULES" >&2
   exit 3
 fi
 
@@ -43,19 +45,18 @@ run_docker() {
   # NOTE: Docker volume-mount paths can need adjustment on Windows/Git Bash; if
   # mounts fail there, run Censor from WSL or install semgrep inside WSL instead.
   echo "Running semgrep via Docker (semgrep/semgrep) — native semgrep not found."
-  local rules_dir rules_file src_dir src_arg
-  rules_dir="$(cd "$(dirname "$RULES")" && pwd)"
-  rules_file="$(basename "$RULES")"
+  local rules_dir src_dir src_arg
+  rules_dir="$(cd "$RULES" && pwd)"
   if [ -d "$SRC" ]; then
     src_dir="$(cd "$SRC" && pwd)"; src_arg="/src"
   else
     src_dir="$(cd "$(dirname "$SRC")" && pwd)"; src_arg="/src/$(basename "$SRC")"
   fi
   docker run --rm -v "$rules_dir:/rules:ro" -v "$src_dir:/src:ro" \
-    semgrep/semgrep semgrep --quiet --config "/rules/$rules_file" "$src_arg" || true
+    semgrep/semgrep semgrep --quiet --config /rules "$src_arg" || true
   if [ -n "$JSON_OUT" ]; then
     docker run --rm -v "$rules_dir:/rules:ro" -v "$src_dir:/src:ro" \
-      semgrep/semgrep semgrep --quiet --config "/rules/$rules_file" "$src_arg" --json 2>/dev/null > "$JSON_OUT" || true
+      semgrep/semgrep semgrep --quiet --config /rules "$src_arg" --json 2>/dev/null > "$JSON_OUT" || true
     echo; echo "JSON written to: $JSON_OUT"
   fi
 }

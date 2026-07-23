@@ -68,6 +68,18 @@ check openssl  "Stage 1 TLS cert-expiry (optional)"
 
 have docker && echo "  [info]    docker    present — enables a semgrep fallback if native semgrep is unavailable"
 
+# PowerShell (optional Stage-2 leg, only used for .ps1/.psm1 targets)
+if have pwsh; then
+  if pwsh -NoProfile -Command "if (Get-Module -ListAvailable PSScriptAnalyzer) {exit 0} else {exit 1}" >/dev/null 2>&1; then
+    printf '  [ok]      %-9s %s\n' "psa" "Stage 2 PowerShell scan (PSScriptAnalyzer present)"
+  else
+    printf '  [MISSING] %-9s %s\n' "psa" "Stage 2 PowerShell scan (pwsh present, module missing)"
+    printf '            install: pwsh -c "Install-Module PSScriptAnalyzer -Scope CurrentUser -Force"\n'
+  fi
+else
+  echo "  [info]    pwsh      not present — PowerShell scan skipped (only needed for .ps1/.psm1 targets)"
+fi
+
 # ── machine-readable block for the skill ──────────────────────────────────────
 present=""
 for t in curl semgrep gitleaks openssl; do have "$t" && present="$present $t"; done

@@ -73,13 +73,28 @@ fi
 
 # 4) scripts parse cleanly
 echo "4) bash -n on all scripts"
-for s in check_deps.sh probe.sh scan_rules.sh scan_secrets.sh; do
+for s in check_deps.sh probe.sh scan_rules.sh scan_secrets.sh run_deterministic.sh; do
   if [ -f "$SCRIPTS/$s" ]; then
     if bash -n "$SCRIPTS/$s" 2>/dev/null; then ok "parse $s"; else bad "parse $s"; fi
   else
     bad "missing $s"
   fi
 done
+
+# 5) PowerShell script syntax (pwsh parser, if available).
+# pwsh is a Windows program under Git Bash — convert the MSYS path to a Windows path.
+echo "5) scan_ps.ps1 syntax (pwsh)"
+PS_FILE="$SCRIPTS/scan_ps.ps1"
+command -v cygpath >/dev/null 2>&1 && PS_FILE="$(cygpath -w "$PS_FILE")"
+if [ ! -f "$SCRIPTS/scan_ps.ps1" ]; then
+  bad "missing scan_ps.ps1"
+elif ! have pwsh; then
+  skp "pwsh not installed"
+elif pwsh -NoProfile -Command "try { [void][ScriptBlock]::Create((Get-Content -Raw '$PS_FILE')); exit 0 } catch { exit 1 }" >/dev/null 2>&1; then
+  ok "parse scan_ps.ps1"
+else
+  bad "parse scan_ps.ps1"
+fi
 
 echo
 echo "Summary: $pass passed, $fail failed, $skip skipped"

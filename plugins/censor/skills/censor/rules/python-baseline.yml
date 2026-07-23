@@ -1,0 +1,268 @@
+# Python Security Baseline — Stage-2 deterministic ruleset (Censor)
+#
+# Defensive security tooling: these rules DETECT insecure Python code patterns for human review.
+# They map to the checklist in SECURITY_BASELINE.md (§ numbers in each rule's metadata), extended
+# with the Python-specific sinks that baseline (written PHP-first) does not enumerate directly.
+#
+# Precision stance: we prefer "flag for review with some false positives" over silent misses.
+# Inherently noisy rules are marked WARNING/INFO and say so in the message.
+#
+# NOTE: `semgrep --test` was NOT run in the authoring environment (semgrep not installed there).
+# f-string interpolation matching (`f"...{...}..."`) and a few metavariable constructs are marked
+# in RULES.md as "verify with semgrep --test". No deep-expression operator `<... ... ...>` is used
+# in statement position anywhere in this file (it trips semgrep's parser there).
+
+rules:
+  # ---------------------------------------------------------------------------
+  # §2 — SQL injection: tainted/dynamic string built into a query sink
+  # ---------------------------------------------------------------------------
+  - id: py-sqli-format
+    languages: [python]
+    severity: ERROR
+    message: >-
+      SQL is being built by string formatting (f-string, %, .format(), or + concatenation) and
+      passed to a cursor's .execute()/.executemany(), or assembled into a sql/query-named variable.
+      Any interpolated value is an injection vector (§2, CWE-89). Use parameterized queries: pass a
+      static SQL string with %s / ? placeholders and a params tuple — never format values into SQL.
+      NOTE: flags dynamic-SQL SHAPE; a constant f-string is a rare false positive worth reviewing.
+    metadata:
+      baseline: "§2"
+      category: injection
+      cwe: "CWE-89: SQL Injection"
+    patterns:
+      - pattern-either:
+          # dynamic SQL passed straight into a DB-API execute sink
+          - pattern: $CUR.execute(f"...{...}...")
+          - pattern: $CUR.execute($A % $B)
+          - pattern: $CUR.execute($A.format(...))
+          - pattern: $CUR.execute($A + $B)
+          - pattern: $CUR.executemany(f"...{...}...")
+          - pattern: $CUR.executemany($A % $B)
+          - pattern: $CUR.executemany($A.format(...))
+          - pattern: $CUR.executemany($A + $B)
+          # dynamic SQL assembled into a sql/query-named variable (the common two-step form)
+          - patterns:
+              - pattern-either:
+                  - pattern: $Q = f"...{...}..."
+                  - pattern: $Q = $A % $B
+                  - pattern: $Q = $A.format(...)
+                  - pattern: $Q = $A + $B
+              - metavariable-regex:
+                  metavariable: $Q
+                  regex: '(?i)(sql|query|stmt|statement)'
+
+  # ---------------------------------------------------------------------------
+  # command-injection — os.system / os.popen / subprocess(shell=True) on non-literals
+  # ---------------------------------------------------------------------------
+  - id: py-command-injection
+    languages: [python]
+    severity: ERROR
+    message: >-
+      A shell command is built from a variable / f-string / concatenation and run via os.system(),
+      os.popen(), or subprocess.*(shell=True) — OS command injection (CWE-78). Pass an argument LIST
+      with shell=False (the default) so arguments are never re-parsed by a shell; if a shell is truly
+      required, shlex.quote() every interpolated value. Static string literals are not flagged.
+    metadata:
+      baseline: "§8a"
+      category: command-injection
+      cwe: "CWE-78: OS Command Injection"
+    patterns:
+      - pattern-either:
+          - patterns:
+              - pattern: os.system($X)
+              - pattern-not: os.system("...")
+          - patterns:
+              - pattern: os.popen($X)
+              - pattern-not: os.popen("...")
+          - patterns:
+              - pattern-either:
+                  - pattern: subprocess.call($CMD, ..., shell=True, ...)
+                  - pattern: subprocess.run($CMD, ..., shell=True, ...)
+                  - pattern: subprocess.Popen($CMD, ..., shell=True, ...)
+                  - pattern: subprocess.check_output($CMD, ..., shell=True, ...)
+                  - pattern: subprocess.check_call($CMD, ..., shell=True, ...)
+              - pattern-not: subprocess.call("...", ..., shell=True, ...)
+              - pattern-not: subprocess.run("...", ..., shell=True, ...)
+              - pattern-not: subprocess.Popen("...", ..., shell=True, ...)
+              - pattern-not: subprocess.check_output("...", ..., shell=True, ...)
+              - pattern-not: subprocess.check_call("...", ..., shell=True, ...)
+
+  # ---------------------------------------------------------------------------
+  # §8a — Dynamic code execution: eval() / exec() on a non-literal
+  # ---------------------------------------------------------------------------
+  - id: py-eval-exec
+    languages: [python]
+    severity: ERROR
+    message: >-
+      eval()/exec() is being called on a non-literal expression — arbitrary code execution surface
+      (§8a, CWE-95). Never eval/exec untrusted or computed input. For data, use ast.literal_eval();
+      for dispatch, use an explicit name->callable whitelist. Static string literals are not flagged.
+    metadata:
+      baseline: "§8a"
+      category: code-injection
+      cwe: "CWE-95: Eval Injection"
+    patterns:
+      - pattern-either:
+          - pattern: eval($X, ...)
+          - pattern: exec($X, ...)
+      - pattern-not: eval("...", ...)
+      - pattern-not: exec("...", ...)
+
+  # ---------------------------------------------------------------------------
+  # code-injection — Unsafe deserialization (pickle / yaml.load / marshal)
+  # ---------------------------------------------------------------------------
+  - id: py-unsafe-deserialization
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Unsafe deserialization: pickle/cPickle/marshal load*() execute arbitrary objects on load, and
+      one-arg yaml.load() uses the FullLoader (constructs arbitrary Python) (CWE-502). Only
+      deserialize fully-trusted data. Use yaml.safe_load() (or Loader=SafeLoader), and json / a
+      schema-validated format instead of pickle/marshal for any externally-influenced bytes.
+    metadata:
+      baseline: "§8a"
+      category: code-injection
+      cwe: "CWE-502: Deserialization of Untrusted Data"
+    patterns:
+      - pattern-either:
+          - pattern: pickle.load(...)
+          - pattern: pickle.loads(...)
+          - pattern: cPickle.load(...)
+          - pattern: cPickle.loads(...)
+          - pattern: marshal.load(...)
+          - pattern: marshal.loads(...)
+          - pattern: yaml.load($X)
+
+  # ---------------------------------------------------------------------------
+  # §8 — Disabled TLS certificate verification in requests
+  # ---------------------------------------------------------------------------
+  - id: py-tls-verify-disabled
+    languages: [python]
+    severity: WARNING
+    message: >-
+      TLS certificate verification is disabled (verify=False) on an HTTP call — the connection is
+      open to man-in-the-middle interception (§8, CWE-295). Remove verify=False; if the host uses a
+      private CA, point verify= at that CA bundle path instead. NOTE: occasionally intentional for
+      internal tooling against a self-signed host — review, don't assume it's a bug.
+    metadata:
+      baseline: "§8"
+      category: transport
+      cwe: "CWE-295: Improper Certificate Validation"
+    patterns:
+      - pattern-either:
+          - pattern: requests.get(..., verify=False, ...)
+          - pattern: requests.post(..., verify=False, ...)
+          - pattern: requests.put(..., verify=False, ...)
+          - pattern: requests.patch(..., verify=False, ...)
+          - pattern: requests.delete(..., verify=False, ...)
+          - pattern: requests.head(..., verify=False, ...)
+          - pattern: requests.options(..., verify=False, ...)
+          - pattern: requests.request(..., verify=False, ...)
+          - pattern: $SESSION.get(..., verify=False, ...)
+          - pattern: $SESSION.post(..., verify=False, ...)
+          - pattern: $SESSION.put(..., verify=False, ...)
+          - pattern: $SESSION.request(..., verify=False, ...)
+
+  # ---------------------------------------------------------------------------
+  # §1 — Hardcoded-looking secret (lightweight complement to gitleaks)
+  # ---------------------------------------------------------------------------
+  - id: py-hardcoded-secret
+    languages: [python]
+    severity: WARNING
+    message: >-
+      A non-empty string literal is assigned to a password/secret/api_key/token-named variable —
+      a hardcoded credential (§1, CWE-798). Load secrets from os.getenv()/os.environ or a secrets
+      manager, never source. NOTE: gitleaks is the primary secret scanner; this is a lightweight
+      in-file complement and may false-positive on placeholders/examples.
+    metadata:
+      baseline: "§1"
+      category: secrets
+      cwe: "CWE-798: Hard-coded Credentials"
+    patterns:
+      - pattern: $NAME = $VAL
+      - metavariable-regex:
+          metavariable: $NAME
+          regex: '(?i)(password|passwd|secret|api_?key|apikey|token)'
+      - metavariable-regex:
+          metavariable: $VAL
+          regex: "^['\"].+['\"]$"
+
+  # ---------------------------------------------------------------------------
+  # §12 / §9 — Flask debug server enabled (interactive debugger = RCE)
+  # ---------------------------------------------------------------------------
+  - id: py-flask-debug
+    languages: [python]
+    severity: WARNING
+    message: >-
+      A dev server is started with debug=True. Flask/Werkzeug's debugger exposes an interactive
+      console that is remote code execution if reachable, and it leaks tracebacks (§9/§12). Never
+      run debug=True in production; gate it behind an env var defaulting to False. NOTE: matches any
+      .run(debug=True); confirm it is the app server and not an unrelated method.
+    metadata:
+      baseline: "§9"
+      category: info-disclosure
+      cwe: "CWE-489: Active Debug Code"
+    patterns:
+      - pattern: $APP.run(..., debug=True, ...)
+
+  # ---------------------------------------------------------------------------
+  # crypto — Weak hash (MD5/SHA-1) — a problem for passwords/security tokens
+  # ---------------------------------------------------------------------------
+  - id: py-weak-hash-password
+    languages: [python]
+    severity: WARNING
+    message: >-
+      MD5/SHA-1 are cryptographically broken (CWE-327/328). WARNING because they are FINE for
+      non-security uses (checksums, ETags, cache keys) — the problem is using them for passwords,
+      security tokens, signatures, or integrity of untrusted data. For passwords use a slow KDF
+      (bcrypt/argon2/PBKDF2); for integrity use SHA-256+. Review the call's purpose.
+    metadata:
+      baseline: "§5"
+      category: crypto
+      cwe: "CWE-328: Use of Weak Hash"
+    patterns:
+      - pattern-either:
+          - pattern: hashlib.md5(...)
+          - pattern: hashlib.sha1(...)
+          - pattern: hashlib.new("md5", ...)
+          - pattern: hashlib.new("sha1", ...)
+
+  # ---------------------------------------------------------------------------
+  # §9 — assert used for runtime validation (stripped under python -O)
+  # ---------------------------------------------------------------------------
+  - id: py-assert-security
+    languages: [python]
+    severity: WARNING
+    message: >-
+      An assert is used for a runtime check. Python's -O flag strips ALL asserts, so any assert
+      guarding auth, input validation, or an invariant silently vanishes in an optimized build.
+      Use an explicit `if not cond: raise` for validation; keep assert for tests/internal invariants
+      only. NOTE: noisy — this flags EVERY assert; expect false positives in test code.
+    metadata:
+      baseline: "§9"
+      category: broken-validation
+      cwe: "CWE-617: Reachable Assertion"
+    patterns:
+      - pattern-either:
+          - pattern: assert $X
+          - pattern: assert $X, $MSG
+
+  # ---------------------------------------------------------------------------
+  # §3 — Jinja2 autoescape disabled (XSS)
+  # ---------------------------------------------------------------------------
+  - id: py-jinja-autoescape-off
+    languages: [python]
+    severity: WARNING
+    message: >-
+      A Jinja2 Environment is created with autoescape=False — any variable rendered into HTML is
+      unescaped, a stored/reflected XSS vector (§3, CWE-79). Use autoescape=True, or
+      autoescape=select_autoescape() to enable it for HTML/XML templates. NOTE: matches any
+      Environment(autoescape=False); confirm it is a jinja2 Environment.
+    metadata:
+      baseline: "§3"
+      category: xss
+      cwe: "CWE-79: Cross-site Scripting"
+    patterns:
+      - pattern-either:
+          - pattern: jinja2.Environment(..., autoescape=False, ...)
+          - pattern: Environment(..., autoescape=False, ...)

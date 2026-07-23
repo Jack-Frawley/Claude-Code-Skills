@@ -1,0 +1,16 @@
+# .censorignore — copy to the ROOT of the audited project (as ".censorignore") to
+# mute known/accepted findings so repeat Censor audits stay quiet.
+#
+# One rule per line; "#" starts a comment. Suppressed findings are still COUNTED and
+# reported in the advisory's coverage note — suppressed is NOT the same as absent.
+#
+# Forms:
+#   <rule-id>                 suppress that rule everywhere
+#   <rule-id>:<path-glob>     suppress that rule under matching paths
+#   path:<glob>               suppress ALL findings under a path
+#
+# Examples (delete these; they are illustrative):
+# hardcoded-secret-define     # accepted: the flagged "secret" is a public test key
+# cookie-as-identity:legacy/* # legacy pages slated for deletion — tracked in TICKET-123
+# path:vendor/**              # third-party code, not ours to fix
+# py-assert-security          # this project runs with asserts enabled by policy

@@ -23,9 +23,11 @@ is an optional deepening layer.
    exposed-path list, via `curl`. Read-only; status codes only, never downloads response bodies
    (so an exposed secret file's contents are never captured).
 2. **Rules** (source, no LLM) — [`semgrep`](https://semgrep.dev) with the baseline encoded as
-   rules (`plugins/censor/skills/censor/rules/web-security-baseline.yml`) plus
-   [`gitleaks`](https://github.com/gitleaks/gitleaks) for in-tree secrets. **The baseline is an
-   executable ruleset**, not just a document.
+   rules (`plugins/censor/skills/censor/rules/`), covering **PHP, Python, and JavaScript**;
+   [`gitleaks`](https://github.com/gitleaks/gitleaks) for in-tree secrets; and
+   [PSScriptAnalyzer](https://github.com/PowerShell/PSScriptAnalyzer) for **PowerShell**
+   (`.ps1`/`.psm1`). **The baseline is an executable ruleset**, not just a document. Every rule
+   is validated in CI (`semgrep --validate` + `--test` on each push).
 3. **Reason** (source, LLM — optional, depth-selectable) — a guided source review for the logic
    bugs static rules can't judge: IDOR, auth bypass, missing checks. Runs in your own Claude
    session.

@@ -11,9 +11,11 @@ description: >-
   security, auth, or a single bug; this is a heavy, deliberate operation.
 allowed-tools:
   - Bash(${CLAUDE_SKILL_DIR}/scripts/check_deps.sh *)
+  - Bash(${CLAUDE_SKILL_DIR}/scripts/run_deterministic.sh *)
   - Bash(${CLAUDE_SKILL_DIR}/scripts/probe.sh *)
   - Bash(${CLAUDE_SKILL_DIR}/scripts/scan_rules.sh *)
   - Bash(${CLAUDE_SKILL_DIR}/scripts/scan_secrets.sh *)
+  - Bash(pwsh -NoProfile -File ${CLAUDE_SKILL_DIR}/scripts/scan_ps.ps1 *)
   - Read
   - Grep
   - Glob
@@ -90,6 +92,17 @@ black-box, Stage 1 only").
 
 ## Step 2 — Run the deterministic stages
 
+**Easiest: the one-command orchestrator** runs every deterministic stage that applies and
+writes JSON artifacts to an out-dir:
+```
+bash ${CLAUDE_SKILL_DIR}/scripts/run_deterministic.sh --source <path> --url <base-url> --out-dir <dir>
+```
+(Give `--source`, `--url`, or both.) It runs the probe, semgrep, gitleaks, and — when the
+source contains `.ps1`/`.psm1` and `pwsh` is present — the PowerShell scan, producing
+`probe.json`, `rules.json`, `secrets.json`, `ps.json`. Then read those artifacts.
+
+Or run the stages individually:
+
 **Stage 1 (if a live URL is available):**
 ```
 bash ${CLAUDE_SKILL_DIR}/scripts/probe.sh <base-url>
@@ -99,10 +112,13 @@ status codes only — it never downloads secret bodies). Parse its JSON output.
 
 **Stage 2 (if a source path is available):**
 ```
-bash ${CLAUDE_SKILL_DIR}/scripts/scan_rules.sh   <source-path>   # semgrep baseline rules
+bash ${CLAUDE_SKILL_DIR}/scripts/scan_rules.sh   <source-path>   # semgrep: PHP + Python + JS baseline rules
 bash ${CLAUDE_SKILL_DIR}/scripts/scan_secrets.sh <source-path>   # gitleaks secrets
+pwsh -NoProfile -File ${CLAUDE_SKILL_DIR}/scripts/scan_ps.ps1 -Path <source-path>   # PowerShell (PSScriptAnalyzer), if .ps1/.psm1 present
 ```
 Collect the findings. Each semgrep hit carries the baseline `§` it maps to (in `metadata`).
+The semgrep ruleset covers **PHP, Python, and JavaScript**; the PowerShell leg uses
+PSScriptAnalyzer's security rules (tagged `[SECURITY]`).
 
 ## Step 3 — Stage 3 review (depth-dependent)
 
@@ -133,11 +149,21 @@ Collect the findings. Each semgrep hit carries the baseline `§` it maps to (in 
   dedupe across them. If the environment can't spawn subagents, tell the user and fall back
   to Depth B.
 
-## Step 4 — Deduplicate + rank
+## Step 4 — Deduplicate, apply suppressions, rank
 
-Merge deterministic + review findings; drop duplicates (same file:line/URL). Rank by
-severity (Critical → High → Medium → Low). For each finding keep: file:line or URL, the
-baseline `§`, a one-sentence exploit/impact, and a fix direction.
+Merge deterministic + review findings; drop duplicates (same file:line/URL).
+
+**Apply `.censorignore` suppressions.** If a `.censorignore` file exists at the audited
+source root, read it and drop matching findings (this lets owners accept/mute known findings
+so repeat audits stay quiet). Format — one rule per line, `#` starts a comment:
+- `<rule-id>` — suppress that rule everywhere (e.g. `hardcoded-secret-define`).
+- `<rule-id>:<path-glob>` — suppress that rule under matching paths (e.g. `cookie-as-identity:legacy/*`).
+- `path:<glob>` — suppress all findings under a path (e.g. `path:vendor/**`).
+Record how many findings were suppressed (and by which rules) in the advisory's coverage note
+— suppressed ≠ absent, and the reader should know muting is in effect.
+
+Then rank by severity (Critical → High → Medium → Low). For each finding keep: file:line or
+URL, the baseline `§`, a one-sentence exploit/impact, and a fix direction.
 
 ## Step 5 — Verify exposure claims (the backstop)
 
