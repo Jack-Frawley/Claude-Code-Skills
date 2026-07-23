@@ -42,7 +42,13 @@ jobs:
           d['rules'] = [r for r in d['rules'] if r['id'] == '${{ matrix.rule }}']
           yaml.safe_dump(d, open('one.yml', 'w'), sort_keys=False)
           PY
-          semgrep --validate --config one.yml
+          if ! semgrep --validate --config one.yml 2> err.txt; then
+            echo "===== semgrep --validate error for ${{ matrix.rule }} ====="
+            cat err.txt
+            MSG=$(tr '\n' ' ' < err.txt | tr -s ' ' | cut -c1-1200)
+            echo "::error title=validate ${{ matrix.rule }}::${MSG}"
+            exit 1
+          fi
 
   harness:
     runs-on: ubuntu-latest
