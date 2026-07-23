@@ -28,7 +28,7 @@ if ! have semgrep; then
 elif [ ! -d "$RULES" ]; then
   bad "rules dir missing: $RULES"
 else
-  if semgrep --test --config "$RULES" "$RULES" >/tmp/censor_semgrep_test.out 2>&1; then
+  if semgrep --test --config "$RULES" "$RULES/tests" >/tmp/censor_semgrep_test.out 2>&1; then
     ok "semgrep rule tests"
   else
     bad "semgrep rule tests (see /tmp/censor_semgrep_test.out)"

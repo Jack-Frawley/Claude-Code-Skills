@@ -167,13 +167,13 @@ rules:
       category: info-disclosure
     patterns:
       - pattern-either:
-          - pattern: var_dump(<... getenv(...) ...>)
-          - pattern: print_r(<... getenv(...) ...>)
-          - pattern: echo getenv(...)
-          - pattern: var_dump($_ENV)
-          - pattern: print_r($_ENV)
-          - pattern: var_dump(<... $_ENV[...] ...>)
-          - pattern: print_r(<... $_ENV[...] ...>)
+          - pattern: getenv(...)
+          - pattern: $_ENV
+          - pattern: $_ENV[...]
+      - pattern-either:
+          - pattern-inside: var_dump(...)
+          - pattern-inside: print_r(...)
+          - pattern-inside: echo $SINK;
 
   # ---------------------------------------------------------------------------
   # §3 — Reflected XSS: unescaped echo of request data
@@ -190,20 +190,16 @@ rules:
       cwe: "CWE-79: Cross-site Scripting"
     patterns:
       - pattern-either:
-          - pattern: echo <... $_GET[...] ...>
-          - pattern: echo <... $_POST[...] ...>
-          - pattern: echo <... $_REQUEST[...] ...>
-          - pattern: print <... $_GET[...] ...>
-          - pattern: print <... $_POST[...] ...>
-          - pattern: print <... $_REQUEST[...] ...>
-      - pattern-not: echo htmlspecialchars(...)
-      - pattern-not: echo htmlentities(...)
-      - pattern-not: echo h(...)
-      - pattern-not: echo e(...)
-      - pattern-not: print htmlspecialchars(...)
-      - pattern-not: print htmlentities(...)
-      - pattern-not: print h(...)
-      - pattern-not: print e(...)
+          - pattern: $_GET[...]
+          - pattern: $_POST[...]
+          - pattern: $_REQUEST[...]
+      - pattern-either:
+          - pattern-inside: echo $SINK;
+          - pattern-inside: print $SINK;
+      - pattern-not-inside: htmlspecialchars(...)
+      - pattern-not-inside: htmlentities(...)
+      - pattern-not-inside: h(...)
+      - pattern-not-inside: e(...)
 
   # ---------------------------------------------------------------------------
   # §8a — Dynamic code execution
@@ -265,15 +261,14 @@ rules:
       category: info-disclosure
     patterns:
       - pattern-either:
-          - pattern: die(<... $X->getMessage() ...>)
-          - pattern: echo <... $X->getMessage() ...>
-          - pattern: print <... $X->getMessage() ...>
-          - pattern: die(<... sqlsrv_errors() ...>)
-          - pattern: echo <... sqlsrv_errors() ...>
-          - pattern: print_r(sqlsrv_errors(...))
-          - pattern: die(<... mysqli_error(...) ...>)
-          - pattern: echo <... mysqli_error(...) ...>
-          - pattern: print_r(mysqli_error(...))
+          - pattern: $X->getMessage()
+          - pattern: sqlsrv_errors(...)
+          - pattern: mysqli_error(...)
+      - pattern-either:
+          - pattern-inside: echo $SINK;
+          - pattern-inside: print $SINK;
+          - pattern-inside: die(...)
+          - pattern-inside: print_r(...)
 
   # ---------------------------------------------------------------------------
   # §7 — Upload destination built from the client-supplied filename
