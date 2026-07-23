@@ -9,13 +9,16 @@ description: >-
   site, scan a web app for vulnerabilities, or check code against the security
   baseline — or invokes /censor. Do NOT auto-invoke on incidental mentions of
   security, auth, or a single bug; this is a heavy, deliberate operation.
-allowed-tools: >-
-  Bash(bash ${CLAUDE_SKILL_DIR}/scripts/check_deps.sh*),
-  Bash(bash ${CLAUDE_SKILL_DIR}/scripts/probe.sh*),
-  Bash(bash ${CLAUDE_SKILL_DIR}/scripts/scan_rules.sh*),
-  Bash(bash ${CLAUDE_SKILL_DIR}/scripts/scan_secrets.sh*),
-  Bash(semgrep*), Bash(gitleaks*), Bash(curl*),
-  Read, Grep, Glob, Write, Task
+allowed-tools:
+  - Bash(${CLAUDE_SKILL_DIR}/scripts/check_deps.sh *)
+  - Bash(${CLAUDE_SKILL_DIR}/scripts/probe.sh *)
+  - Bash(${CLAUDE_SKILL_DIR}/scripts/scan_rules.sh *)
+  - Bash(${CLAUDE_SKILL_DIR}/scripts/scan_secrets.sh *)
+  - Read
+  - Grep
+  - Glob
+  - Write
+  - Task
 ---
 
 # Censor — audit a web app against the security baseline
