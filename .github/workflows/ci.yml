@@ -6,58 +6,14 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Validate each rule on its own so a failing job's NAME pinpoints the broken rule.
-  validate-rules:
+  validate:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        rule:
-          - sqli-string-interpolation
-          - php-display-errors-on
-          - php-error-reporting-all
-          - session-cookie-insecure
-          - cookie-as-identity
-          - phpinfo-call
-          - var-dump-getenv
-          - echo-request-unescaped
-          - eval-or-dynamic-exec
-          - extract-request
-          - error-detail-echoed
-          - upload-trusts-client-name
-          - hardcoded-secret-define
-          - innerhtml-string-build
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install semgrep pyyaml
-      - name: validate ${{ matrix.rule }}
-        run: |
-          python - <<'PY'
-          import yaml
-          p = 'plugins/censor/skills/censor/rules/web-security-baseline.yml'
-          d = yaml.safe_load(open(p))
-          d['rules'] = [r for r in d['rules'] if r['id'] == '${{ matrix.rule }}']
-          yaml.safe_dump(d, open('one.yml', 'w'), sort_keys=False)
-          PY
-          if ! semgrep --validate --config one.yml > out.txt 2>&1; then
-            echo "===== semgrep --validate output for ${{ matrix.rule }} ====="
-            cat out.txt
-            MSG=$(grep -iE 'invalid|error|pattern|rule|line|parse|expected|unexpected' out.txt \
-                  | tr '\n' '~' | tr -s ' ' | cut -c1-1800)
-            echo "::error title=validate ${{ matrix.rule }}::${MSG:-see-log}"
-            exit 1
-          fi
 
-  harness:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
       - name: Install scanners (semgrep + gitleaks)
         run: |
           pip install semgrep
@@ -65,5 +21,20 @@ jobs:
                     | grep browser_download_url | grep -i 'linux_x64' | cut -d '"' -f4 | head -1)
           curl -sSL "$GL_URL" | sudo tar xz -C /usr/local/bin gitleaks
           semgrep --version && gitleaks version
-      - name: Test harness (semgrep --test + gitleaks + probe selftest)
+
+      - name: Validate all rulesets (rule syntax)
+        run: |
+          set -e
+          for f in plugins/censor/skills/censor/rules/*.yml; do
+            echo "== validating $f =="
+            if ! semgrep --validate --config "$f" > out.txt 2>&1; then
+              cat out.txt
+              MSG=$(grep -iE 'error|invalid|pattern|rule|parse|expected' out.txt \
+                    | tr '\n' '~' | tr -s ' ' | cut -c1-1800)
+              echo "::error title=validate $(basename "$f")::${MSG:-see-log}"
+              exit 1
+            fi
+          done
+
+      - name: Test harness (semgrep --test on fixtures, gitleaks, probe selftest)
         run: bash tests/run_tests.sh
