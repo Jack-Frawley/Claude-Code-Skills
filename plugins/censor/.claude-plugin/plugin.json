@@ -1,0 +1,10 @@
+{
+  "name": "censor",
+  "description": "Censor — audit a web app against a web security baseline and produce a severity-ranked, baseline-mapped findings advisory (read-only). Deterministic probe + semgrep + gitleaks, plus an optional depth-selectable LLM source review. Invoke with /censor.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Jack Frawley"
+  },
+  "license": "MIT",
+  "keywords": ["security", "audit", "semgrep", "web-security", "code-review", "appsec"]
+}

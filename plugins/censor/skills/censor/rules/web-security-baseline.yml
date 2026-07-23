@@ -1,0 +1,351 @@
+# Web Security Baseline — Stage-2 deterministic ruleset (Censor)
+#
+# Defensive security tooling: these rules DETECT insecure code patterns for human review.
+# They encode the checklist in SECURITY_BASELINE.md (§ numbers in each rule's metadata).
+#
+# Precision stance: we prefer "flag for review with some false positives" over silent misses.
+# Inherently noisy rules are marked WARNING/INFO and say so in the message.
+#
+# NOTE: `semgrep --test` was NOT run in the authoring environment (semgrep not installed there).
+# Patterns using the deep-expression operator `<... ... ...>`, PHP string-interpolation matching,
+# and JS template-literal interpolation are marked in RULES.md as "verify with semgrep --test".
+
+rules:
+  # ---------------------------------------------------------------------------
+  # §2 — Database access: SQL injection via string interpolation/concatenation
+  # ---------------------------------------------------------------------------
+  - id: sqli-string-interpolation
+    languages: [php]
+    severity: ERROR
+    message: >-
+      Request data ($_GET/$_POST/$_REQUEST/$_COOKIE) is interpolated or concatenated into a SQL
+      string that reaches a query sink (->query/->exec/mysqli_query/sqlsrv_query) or a $sql/$query
+      variable. Use parameterized/prepared statements with bound params (§2). Never build SQL from
+      request data by string ops.
+    metadata:
+      baseline: "§2"
+      category: injection
+      cwe: "CWE-89: SQL Injection"
+    patterns:
+      - pattern-either:
+          - pattern: $DB->query(<... $_GET[...] ...>)
+          - pattern: $DB->query(<... $_POST[...] ...>)
+          - pattern: $DB->query(<... $_REQUEST[...] ...>)
+          - pattern: $DB->query(<... $_COOKIE[...] ...>)
+          - pattern: $DB->exec(<... $_GET[...] ...>)
+          - pattern: $DB->exec(<... $_POST[...] ...>)
+          - pattern: $DB->exec(<... $_REQUEST[...] ...>)
+          - pattern: $DB->exec(<... $_COOKIE[...] ...>)
+          - pattern: mysqli_query(<... $_GET[...] ...>)
+          - pattern: mysqli_query(<... $_POST[...] ...>)
+          - pattern: mysqli_query(<... $_REQUEST[...] ...>)
+          - pattern: mysqli_query(<... $_COOKIE[...] ...>)
+          - pattern: sqlsrv_query(<... $_GET[...] ...>)
+          - pattern: sqlsrv_query(<... $_POST[...] ...>)
+          - pattern: sqlsrv_query(<... $_REQUEST[...] ...>)
+          - pattern: sqlsrv_query(<... $_COOKIE[...] ...>)
+          - pattern: $sql = <... $_GET[...] ...>
+          - pattern: $sql = <... $_POST[...] ...>
+          - pattern: $sql = <... $_REQUEST[...] ...>
+          - pattern: $sql = <... $_COOKIE[...] ...>
+          - pattern: $query = <... $_GET[...] ...>
+          - pattern: $query = <... $_POST[...] ...>
+          - pattern: $query = <... $_REQUEST[...] ...>
+          - pattern: $query = <... $_COOKIE[...] ...>
+
+  # ---------------------------------------------------------------------------
+  # §12 — display_errors forced on in code
+  # ---------------------------------------------------------------------------
+  - id: php-display-errors-on
+    languages: [php]
+    severity: WARNING
+    message: >-
+      display_errors is being turned ON in code. In production this leaks stack traces, SQL errors,
+      and paths to users (§12). Keep display_errors OFF in prod; log full detail server-side.
+    metadata:
+      baseline: "§12"
+      category: info-disclosure
+    patterns:
+      - pattern-either:
+          - pattern: ini_set("display_errors", 1)
+          - pattern: ini_set("display_errors", "1")
+          - pattern: ini_set("display_errors", "On")
+          - pattern: ini_set("display_errors", "on")
+          - pattern: ini_set("display_errors", true)
+
+  # ---------------------------------------------------------------------------
+  # §12 — error_reporting(E_ALL): context signal (often paired with display_errors)
+  # ---------------------------------------------------------------------------
+  - id: php-error-reporting-all
+    languages: [php]
+    severity: INFO
+    message: >-
+      error_reporting(E_ALL) reports every error. Harmless alone, but paired with display_errors
+      on (see php-display-errors-on) it surfaces sensitive detail to users (§12). Confirm errors
+      are logged, not displayed, in production.
+    metadata:
+      baseline: "§12"
+      category: info-disclosure
+    patterns:
+      - pattern-either:
+          - pattern: error_reporting(E_ALL)
+          - pattern: error_reporting(<... E_ALL ...>)
+
+  # ---------------------------------------------------------------------------
+  # §5 — Insecure session cookie (Secure flag off)
+  # ---------------------------------------------------------------------------
+  - id: session-cookie-insecure
+    languages: [php]
+    severity: WARNING
+    message: >-
+      Session cookie is configured without the Secure flag ('secure' => false, or
+      session.cookie_secure disabled). Session cookies must be Secure; HttpOnly; SameSite=Lax (§5).
+    metadata:
+      baseline: "§5"
+      category: session
+    patterns:
+      - pattern-either:
+          - pattern: session_set_cookie_params([..., "secure" => false, ...])
+          - pattern: ini_set("session.cookie_secure", 0)
+          - pattern: ini_set("session.cookie_secure", "0")
+          - pattern: ini_set("session.cookie_secure", "off")
+          - pattern: ini_set("session.cookie_secure", "Off")
+          - pattern: ini_set("session.cookie_secure", false)
+
+  # ---------------------------------------------------------------------------
+  # §5 — Cookie value trusted as auth identity (legacy cookie-trust auth-bypass class)
+  # ---------------------------------------------------------------------------
+  - id: cookie-as-identity
+    languages: [php]
+    severity: ERROR
+    message: >-
+      A $_COOKIE value is assigned directly to an identity/auth variable. Cookies are client-
+      controlled; trusting one as "who the user is" is an auth bypass (§5, legacy cookie-trust
+      pattern). Derive identity from a validated server session / SSO, not a raw cookie.
+      NOTE: best-effort pattern; a false positive here means "review this", which is acceptable.
+    metadata:
+      baseline: "§5"
+      category: broken-auth
+    patterns:
+      - pattern-either:
+          - pattern: $user = <... $_COOKIE[...] ...>
+          - pattern: $username = <... $_COOKIE[...] ...>
+          - pattern: $userId = <... $_COOKIE[...] ...>
+          - pattern: $userid = <... $_COOKIE[...] ...>
+          - pattern: $userName = <... $_COOKIE[...] ...>
+          - pattern: $currentUser = <... $_COOKIE[...] ...>
+          - pattern: $loggedInUser = <... $_COOKIE[...] ...>
+          - pattern: $authUser = <... $_COOKIE[...] ...>
+          - pattern: $account = <... $_COOKIE[...] ...>
+
+  # ---------------------------------------------------------------------------
+  # §9 — phpinfo() call left in the web root
+  # ---------------------------------------------------------------------------
+  - id: phpinfo-call
+    languages: [php]
+    severity: ERROR
+    message: >-
+      phpinfo() dumps the full PHP configuration, loaded modules, env, and paths to anyone who
+      reaches the page. No diagnostic endpoints in production (§9). Delete before deploy.
+    metadata:
+      baseline: "§9"
+      category: info-disclosure
+    patterns:
+      - pattern: phpinfo(...)
+
+  # ---------------------------------------------------------------------------
+  # §9 / §1 — Debug endpoint leaking environment (env-dump debug-endpoint class)
+  # ---------------------------------------------------------------------------
+  - id: var-dump-getenv
+    languages: [php]
+    severity: ERROR
+    message: >-
+      Environment variables are being dumped to output (var_dump/print_r/echo of getenv()/$_ENV).
+      This is a debug endpoint leaking secrets and config (§9/§1). Remove it.
+    metadata:
+      baseline: "§9"
+      category: info-disclosure
+    patterns:
+      - pattern-either:
+          - pattern: var_dump(<... getenv(...) ...>)
+          - pattern: print_r(<... getenv(...) ...>)
+          - pattern: echo getenv(...)
+          - pattern: var_dump($_ENV)
+          - pattern: print_r($_ENV)
+          - pattern: var_dump(<... $_ENV[...] ...>)
+          - pattern: print_r(<... $_ENV[...] ...>)
+
+  # ---------------------------------------------------------------------------
+  # §3 — Reflected XSS: unescaped echo of request data
+  # ---------------------------------------------------------------------------
+  - id: echo-request-unescaped
+    languages: [php]
+    severity: ERROR
+    message: >-
+      Request data ($_GET/$_POST/$_REQUEST) is echoed without escaping — reflected XSS (§3).
+      Wrap in htmlspecialchars(ENT_QUOTES) or the e()/h() helper at every echo.
+    metadata:
+      baseline: "§3"
+      category: xss
+      cwe: "CWE-79: Cross-site Scripting"
+    patterns:
+      - pattern-either:
+          - pattern: echo <... $_GET[...] ...>
+          - pattern: echo <... $_POST[...] ...>
+          - pattern: echo <... $_REQUEST[...] ...>
+          - pattern: print <... $_GET[...] ...>
+          - pattern: print <... $_POST[...] ...>
+          - pattern: print <... $_REQUEST[...] ...>
+      - pattern-not: echo htmlspecialchars(...)
+      - pattern-not: echo htmlentities(...)
+      - pattern-not: echo h(...)
+      - pattern-not: echo e(...)
+      - pattern-not: print htmlspecialchars(...)
+      - pattern-not: print htmlentities(...)
+      - pattern-not: print h(...)
+      - pattern-not: print e(...)
+
+  # ---------------------------------------------------------------------------
+  # §8a — Dynamic code execution
+  # ---------------------------------------------------------------------------
+  - id: eval-or-dynamic-exec
+    languages: [php]
+    severity: ERROR
+    message: >-
+      Dynamic code execution (eval / assert(var) / create_function / call_user_func on request
+      data). This is remote code execution surface and violates the CSP-clean / no-eval invariant
+      (§8a). Replace with explicit dispatch/whitelist.
+    metadata:
+      baseline: "§8a"
+      category: code-injection
+      cwe: "CWE-95: Eval Injection"
+    patterns:
+      - pattern-either:
+          - pattern: eval(...)
+          - pattern: assert($X)
+          - pattern: create_function(...)
+          - pattern: call_user_func(<... $_GET[...] ...>, ...)
+          - pattern: call_user_func(<... $_POST[...] ...>, ...)
+          - pattern: call_user_func(<... $_REQUEST[...] ...>, ...)
+          - pattern: call_user_func_array(<... $_GET[...] ...>, ...)
+          - pattern: call_user_func_array(<... $_POST[...] ...>, ...)
+          - pattern: call_user_func_array(<... $_REQUEST[...] ...>, ...)
+
+  # ---------------------------------------------------------------------------
+  # §8a — extract() on request superglobals (variable injection)
+  # ---------------------------------------------------------------------------
+  - id: extract-request
+    languages: [php]
+    severity: ERROR
+    message: >-
+      extract() on a request superglobal lets the client set arbitrary local variables (variable
+      injection / auth bypass) (§8a). Read named fields explicitly instead.
+    metadata:
+      baseline: "§8a"
+      category: code-injection
+    patterns:
+      - pattern-either:
+          - pattern: extract($_GET, ...)
+          - pattern: extract($_POST, ...)
+          - pattern: extract($_REQUEST, ...)
+          - pattern: extract($_COOKIE, ...)
+
+  # ---------------------------------------------------------------------------
+  # §12 — Exception / DB error detail echoed to output
+  # ---------------------------------------------------------------------------
+  - id: error-detail-echoed
+    languages: [php]
+    severity: WARNING
+    message: >-
+      Exception or DB error detail is written to output (getMessage()/sqlsrv_errors()/mysqli_error()
+      in echo/die/print_r). Never show raw errors to users — show a short message + correlation id,
+      log the detail server-side (§12).
+    metadata:
+      baseline: "§12"
+      category: info-disclosure
+    patterns:
+      - pattern-either:
+          - pattern: die(<... $X->getMessage() ...>)
+          - pattern: echo <... $X->getMessage() ...>
+          - pattern: print <... $X->getMessage() ...>
+          - pattern: die(<... sqlsrv_errors() ...>)
+          - pattern: echo <... sqlsrv_errors() ...>
+          - pattern: print_r(sqlsrv_errors(...))
+          - pattern: die(<... mysqli_error(...) ...>)
+          - pattern: echo <... mysqli_error(...) ...>
+          - pattern: print_r(mysqli_error(...))
+
+  # ---------------------------------------------------------------------------
+  # §7 — Upload destination built from the client-supplied filename
+  # ---------------------------------------------------------------------------
+  - id: upload-trusts-client-name
+    languages: [php]
+    severity: WARNING
+    message: >-
+      move_uploaded_file() uses the client-supplied filename ($_FILES[...]['name']) in the
+      destination path. Store with randomized/unique names, never trust the client name (§7) —
+      path traversal / overwrite / executable-extension risk.
+    metadata:
+      baseline: "§7"
+      category: file-upload
+      cwe: "CWE-434: Unrestricted Upload"
+    patterns:
+      - pattern-either:
+          - pattern: move_uploaded_file(..., <... $_FILES[...]["name"] ...>)
+          - pattern: move_uploaded_file(..., <... $_FILES[...]['name'] ...>)
+
+  # ---------------------------------------------------------------------------
+  # §1 — Hardcoded-looking secret (lightweight complement to gitleaks)
+  # ---------------------------------------------------------------------------
+  - id: hardcoded-secret-define
+    languages: [php]
+    severity: WARNING
+    message: >-
+      A secret/key/password appears hardcoded as a string literal (define() or a $..._password
+      assignment). Secrets belong in a git-ignored config/env, never in source (§1). NOTE: gitleaks
+      is the primary secret scanner; this is a lightweight complement and may false-positive.
+    metadata:
+      baseline: "§1"
+      category: secrets
+      cwe: "CWE-798: Hard-coded Credentials"
+    patterns:
+      - pattern-either:
+          - patterns:
+              - pattern: define($NAME, $VAL)
+              - metavariable-regex:
+                  metavariable: $NAME
+                  regex: '(?i)(secret|api[_-]?key|_key|apikey|password|passwd|token)'
+              - metavariable-regex:
+                  metavariable: $VAL
+                  regex: "^['\"].+['\"]$"
+          - patterns:
+              - pattern: $VARNAME = $VAL
+              - metavariable-regex:
+                  metavariable: $VARNAME
+                  regex: '(?i)(password|passwd|secret)'
+              - metavariable-regex:
+                  metavariable: $VAL
+                  regex: "^['\"].+['\"]$"
+
+  # ---------------------------------------------------------------------------
+  # §3 — DOM XSS: innerHTML built by string concatenation / template literal
+  # ---------------------------------------------------------------------------
+  - id: innerhtml-string-build
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: >-
+      .innerHTML is assigned an HTML string built by concatenation or a template literal containing
+      a variable — DOM XSS if any interpolated value is untrusted (§3). Set untrusted values via
+      textContent, or build nodes with the DOM API; if HTML is required, run it through a sanitizer.
+    metadata:
+      baseline: "§3"
+      category: xss
+      cwe: "CWE-79: DOM-based XSS"
+    patterns:
+      - pattern-either:
+          - pattern: $EL.innerHTML = `...${...}...`
+          - pattern: $EL.innerHTML = $A + $B
+          - pattern: $EL.innerHTML += `...${...}...`
+          - pattern: $EL.innerHTML += $A + $B
+          - pattern: $EL.outerHTML = `...${...}...`
+          - pattern: $EL.outerHTML = $A + $B

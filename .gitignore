@@ -1,0 +1,16 @@
+# Runtime / generated outputs — never commit
+censor-probe-*.json
+*.gitleaks.json
+*.semgrep.json
+report.json
+
+# Advisories are written off-repo by design; never commit them
+Censor_Advisory_*.md
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/

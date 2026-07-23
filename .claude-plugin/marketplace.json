@@ -1,0 +1,13 @@
+{
+  "name": "claude-code-skills",
+  "owner": {
+    "name": "Jack Frawley"
+  },
+  "plugins": [
+    {
+      "name": "censor",
+      "source": "./plugins/censor",
+      "description": "Read-only web-app security auditor: black-box probe + semgrep baseline rules + gitleaks + optional LLM source review, producing a severity-ranked advisory. Invoke /censor."
+    }
+  ]
+}

@@ -1,0 +1,117 @@
+# Censor — Stage-2 semgrep ruleset (`web-security-baseline.yml`)
+
+Deterministic pattern rules that encode the **Web Security Baseline**
+(`../SECURITY_BASELINE.md`) for the Censor security-audit skill. These are **defensive** rules:
+they DETECT insecure patterns and flag them for human/LLM review. They do not exploit anything.
+
+Stance: **precision-with-some-false-positives over misses.** Where a rule is inherently noisy it is
+scored WARNING/INFO and says so in its `message`. A false positive means "a human should look at
+this line," which is an acceptable cost for a review tool.
+
+## Rule catalog
+
+| Rule id | Baseline § | Severity | Enforces / detects |
+|---|---|---|---|
+| `sqli-string-interpolation` | §2 Database access | ERROR | Request data (`$_GET`/`$_POST`/`$_REQUEST`/`$_COOKIE`) interpolated or concatenated into SQL reaching `->query`/`->exec`/`mysqli_query`/`sqlsrv_query` or a `$sql`/`$query` var — use prepared statements. |
+| `php-display-errors-on` | §12 Error handling | WARNING | `ini_set('display_errors', 1/'On'/true)` — leaks stack traces/SQL/paths in prod. |
+| `php-error-reporting-all` | §12 Error handling | INFO | `error_reporting(E_ALL)` — context signal; dangerous only when paired with display_errors on. |
+| `session-cookie-insecure` | §5 Auth & sessions | WARNING | `'secure' => false` in `session_set_cookie_params`, or `session.cookie_secure` disabled — session cookie must be Secure. |
+| `cookie-as-identity` | §5 Auth & sessions | ERROR | A `$_COOKIE[...]` value assigned to an identity var (`$user`, `$username`, …) — the legacy cookie-trust auth-bypass class. Best-effort; FP acceptable. |
+| `phpinfo-call` | §9 No debug/dead code | ERROR | Any `phpinfo(...)` call — config/env dump in the web root. |
+| `var-dump-getenv` | §9 / §1 | ERROR | `var_dump`/`print_r`/`echo` of `getenv()`/`$_ENV` — env-leaking debug endpoint (an env-dump debug endpoint). |
+| `echo-request-unescaped` | §3 Output/XSS | ERROR | `echo`/`print`/`<?=` of `$_GET`/`$_POST`/`$_REQUEST` not wrapped in `htmlspecialchars`/`htmlentities`/`h(`/`e(` — reflected XSS. |
+| `eval-or-dynamic-exec` | §8a CSP-clean/no-eval | ERROR | `eval(`, `assert($var)`, `create_function(`, or `call_user_func(_array)` on request data — dynamic code execution. |
+| `extract-request` | §8a | ERROR | `extract($_GET/$_POST/$_REQUEST/$_COOKIE)` — variable injection. |
+| `error-detail-echoed` | §12 Error handling | WARNING | `die`/`echo`/`print_r` of `$e->getMessage()`, `sqlsrv_errors()`, or `mysqli_error()` — leaks exception/DB detail to output. |
+| `upload-trusts-client-name` | §7 File uploads | WARNING | `move_uploaded_file(..., ... $_FILES[...]['name'] ...)` — client filename used in the destination path. |
+| `hardcoded-secret-define` | §1 Secrets & config | WARNING | `define('*_SECRET'/'*_KEY'/'*_PASSWORD', '<literal>')` or `$*password = '<literal>'` — hardcoded-looking secret. |
+| `innerhtml-string-build` | §3 Output/XSS (JS) | WARNING | `.innerHTML`/`.outerHTML` assigned a string built by concatenation or a template literal with interpolation — DOM XSS. `languages: [javascript, typescript]`. |
+
+**Rule count: 14** (13 PHP, 1 JS/TS).
+
+## Test fixtures
+
+Native semgrep test fixtures live in `tests/`, using the annotation convention: a line that SHOULD
+match is preceded by `// ruleid: <rule-id>`, a line that should NOT match by `// ok: <rule-id>`.
+Every rule has at least one positive and one negative case. Fixtures are grouped by topic:
+
+| Fixture | Rules exercised |
+|---|---|
+| `tests/sqli.php` | `sqli-string-interpolation` |
+| `tests/config.php` | `php-display-errors-on`, `php-error-reporting-all`, `session-cookie-insecure` |
+| `tests/auth.php` | `cookie-as-identity` |
+| `tests/debug.php` | `phpinfo-call`, `var-dump-getenv` |
+| `tests/xss.php` | `echo-request-unescaped` |
+| `tests/dynexec.php` | `eval-or-dynamic-exec`, `extract-request` |
+| `tests/errors.php` | `error-detail-echoed` |
+| `tests/upload.php` | `upload-trusts-client-name` |
+| `tests/secrets.php` | `hardcoded-secret-define` (values are obvious fakes — `REDACTED_FAKE_SECRET`) |
+| `tests/innerhtml.js` | `innerhtml-string-build` |
+
+Run the built-in test runner from the `rules/` directory:
+
+```
+semgrep --test --config web-security-baseline.yml tests/
+```
+
+> **`semgrep --test` run is PENDING.** semgrep was not installed in the authoring environment, so
+> the rules and fixtures were written by hand and have **not** been executed yet. Run the command
+> above before relying on the ruleset. If your semgrep version pairs tests by *filename* rather than
+> by rule-id annotation, rename each fixture to share the config basename (or split the yaml). The
+> annotation-by-id convention above matches current semgrep behavior.
+
+### Patterns to double-check on that first run
+
+These use constructs whose exact semgrep behavior should be verified against a live run:
+
+- **Deep-expression operator `<... $_GET[...] ...>`** — used across `sqli-string-interpolation`,
+  `echo-request-unescaped`, `error-detail-echoed`, `var-dump-getenv`, `upload-trusts-client-name`,
+  `cookie-as-identity`. This is standard semgrep, but confirm it matches request data in *any*
+  argument position (not just the first).
+- **PHP string-interpolation matching** — the `$sql = "...{$_REQUEST['id']}"` positive in
+  `sqli.php` relies on semgrep finding a superglobal inside a double-quoted interpolated string.
+  Concatenation cases are more certain; the interpolation case is the one to verify.
+- **PHP superglobal literals in patterns** (`$_GET`, `$_ENV`, `$_FILES[...]['name']`) — semgrep
+  treats these as literals (as the public `p/php` registry does), not metavariables; confirm.
+- **`session_set_cookie_params([..., "secure" => false, ...])`** — array-with-key pattern; verify
+  the `...` before/after the key element behaves as expected.
+- **`assert($X)`** — matches `assert` with a single argument (intentionally broad; `assert()` is a
+  known eval-like sink). Confirm it does not over-match on multi-arg `assert()` in your code.
+- **JS template literal `` `...${...}...` ``** in `innerhtml-string-build` — verify the interpolation
+  ellipsis matches, and that the plain-string `ok` case (no `${}`) is correctly excluded.
+- **`hardcoded-secret-define` metavariable-regex** — the value regex `^['"].+['"]$` is meant to fire
+  only on string *literals* (excluding `getenv(...)`); the `$VARNAME = $VAL` branch is broad and
+  filtered by name regex `(?i)(password|passwd|secret)`. Confirm both branches behave.
+
+## Not covered by rules (LLM-only — need human/LLM judgment, not static patterns)
+
+Static patterns can only catch syntactic shapes. The following baseline items require semantic or
+contextual reasoning and are left to Censor's LLM stage (or a human reviewer). They are called out
+so nobody mistakes a green semgrep run for full baseline coverage:
+
+- **IDOR / missing ownership scoping (§6)** — "is this record read/write scoped to the current
+  user?" A `WHERE id = ?` query is *syntactically* fine; whether the `id` is authorized for this
+  user is a semantic question no pattern can answer.
+- **Missing eligibility / server-side gate (§5, §6)** — a sensitive action guarded only by a hidden
+  menu/UI, or a new endpoint that hand-rolls a query and bypasses a shared filter
+  (`staff_exclude_clause()`), is an *absence* of a check — undetectable by "look for pattern X."
+- **Is-a-cookie-trust-actually-a-bypass (§5)** — `cookie-as-identity` flags the shape, but whether a
+  given cookie read is a real auth bypass vs. a harmless preference read needs judgment.
+- **Absence of `session_regenerate_id(true)` across the login boundary (§5)** — proving something is
+  *missing* at the right place is not a pattern match.
+- **Missing CSRF token / state-change on GET (§4)** — requires understanding which requests are
+  state-changing and whether a token is verified with a timing-safe compare.
+- **CSP completeness / inline `style=`/`on*=` accumulation (§8, §8a)** — whether the deployed CSP is
+  actually strict, and whether inline handlers exist across templates, is a whole-codebase +
+  server-header question beyond single-file patterns.
+- **Upload decode+re-encode validation, size caps, non-executable upload dir (§7)** — the *absence*
+  of proper validation, not a bad call, is what matters.
+- **URL scheme-checking for `href`/`src` from input (§3)** — needs dataflow + intent.
+- **Failure-visibility / operability items (§13)** — timeouts on outbound calls, job-outcome
+  recording, honest failure surfacing, failed-read-vs-empty-result, log rotation, `/health` — these
+  are architectural presence/absence checks, not code smells.
+- **Secrets in git history (§1)** — `gitleaks` is the primary secret scanner (history-aware);
+  `hardcoded-secret-define` is only a lightweight in-file complement and cannot see history.
+- **Prepared-statement dynamic `IN (...)` and `ORDER BY` whitelisting (§2)** — a `?`-list or a
+  whitelisted column is correct; distinguishing it from interpolation reliably needs semantic
+  reasoning beyond the coarse `sqli-string-interpolation` shape.
