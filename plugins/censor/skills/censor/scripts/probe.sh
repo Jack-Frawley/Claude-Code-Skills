@@ -55,6 +55,14 @@ EXPOSED_PATHS=(
   "/vendor/"
   "/.vscode/"
   "/debug.log"
+  "/tokens.json"
+  "/token.json"
+  "/secrets.json"
+  "/credentials.json"
+  "/.npmrc"
+  "/.pypirc"
+  "/id_rsa"
+  "/.aws/credentials"
 )
 
 SECURITY_HEADERS=(

@@ -26,8 +26,13 @@ this line," which is an acceptable cost for a review tool.
 | `upload-trusts-client-name` | §7 File uploads | WARNING | `move_uploaded_file(..., ... $_FILES[...]['name'] ...)` — client filename used in the destination path. |
 | `hardcoded-secret-define` | §1 Secrets & config | WARNING | `define('*_SECRET'/'*_KEY'/'*_PASSWORD', '<literal>')` or `$*password = '<literal>'` — hardcoded-looking secret. |
 | `innerhtml-string-build` | §3 Output/XSS (JS) | WARNING | `.innerHTML`/`.outerHTML` assigned a string built by concatenation or a template literal with interpolation — DOM XSS. `languages: [javascript, typescript]`. |
+| `php-unserialize-untrusted` | §3/§14 | ERROR | `unserialize()` of `$_GET/$_POST/$_REQUEST/$_COOKIE` — PHP object injection / RCE. Use `json_decode`. CWE-502. |
+| `php-ldap-injection` | §3 | ERROR | Request data in an LDAP filter (`ldap_search`/`list`/`read`) not wrapped in `ldap_escape` — LDAP injection. CWE-90. |
+| `php-weak-hash` | §15 Crypto | WARNING | `md5()`/`sha1()`/`hash("md5"/"sha1")` — weak for passwords/tokens (use `password_hash` ARGON2ID). CWE-916/328. |
+| `php-weak-random-token` | §15 Crypto | WARNING | `rand()`/`mt_rand()`/`uniqid()` — not a CSPRNG; for tokens/nonces/salts use `random_bytes`/`random_int`. CWE-330/338. |
 
-**Rule count: 14** (13 PHP, 1 JS/TS).
+**Rule count: 18 PHP+JS** (17 PHP, 1 JS/TS) + 10 Python (see the Python section) = **28 total**. Fixtures:
+`tests/php_unserialize.php`, `tests/php_ldap.php`, `tests/php_crypto.php` cover the four crypto/injection additions.
 
 ## Test fixtures
 

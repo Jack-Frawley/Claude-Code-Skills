@@ -344,3 +344,86 @@ rules:
           - pattern: $EL.innerHTML += $A + $B
           - pattern: $EL.outerHTML = `...${...}...`
           - pattern: $EL.outerHTML = $A + $B
+
+  # ---------------------------------------------------------------------------
+  # §3/§14 — unserialize() on request data (PHP object injection / RCE)
+  # ---------------------------------------------------------------------------
+  - id: php-unserialize-untrusted
+    languages: [php]
+    severity: ERROR
+    message: >-
+      unserialize() on request-sourced data enables PHP object injection (RCE via magic methods).
+      Use json_decode for data; never unserialize $_GET/$_POST/$_REQUEST/$_COOKIE (§3/§14, CWE-502).
+    metadata:
+      baseline: "§3"
+      category: deserialization
+      cwe: "CWE-502: Deserialization of Untrusted Data"
+    patterns:
+      - pattern-either:
+          - pattern: unserialize(<... $_GET[...] ...>)
+          - pattern: unserialize(<... $_POST[...] ...>)
+          - pattern: unserialize(<... $_REQUEST[...] ...>)
+          - pattern: unserialize(<... $_COOKIE[...] ...>)
+
+  # ---------------------------------------------------------------------------
+  # §3 — LDAP injection: user input in an LDAP filter without ldap_escape
+  # ---------------------------------------------------------------------------
+  - id: php-ldap-injection
+    languages: [php]
+    severity: ERROR
+    message: >-
+      Request data reaches an LDAP filter without ldap_escape($v, '', LDAP_ESCAPE_FILTER).
+      Escape every user value in an LDAP filter — the prepared-statement rule's LDAP twin (§3, CWE-90).
+    metadata:
+      baseline: "§3"
+      category: injection
+      cwe: "CWE-90: LDAP Injection"
+    patterns:
+      - pattern-either:
+          - pattern: $_GET[...]
+          - pattern: $_POST[...]
+          - pattern: $_REQUEST[...]
+      - pattern-either:
+          - pattern-inside: ldap_search(...)
+          - pattern-inside: ldap_list(...)
+          - pattern-inside: ldap_read(...)
+      - pattern-not-inside: ldap_escape(...)
+
+  # ---------------------------------------------------------------------------
+  # §15 — Weak hash (md5/sha1) — never for passwords or security tokens
+  # ---------------------------------------------------------------------------
+  - id: php-weak-hash
+    languages: [php]
+    severity: WARNING
+    message: >-
+      md5()/sha1() are cryptographically weak. NEVER for passwords (use password_hash with
+      PASSWORD_ARGON2ID/BCRYPT) or security tokens. OK only for non-security checksums (§15, CWE-916/328).
+    metadata:
+      baseline: "§15"
+      category: crypto
+      cwe: "CWE-916: Use of Password Hash With Insufficient Computational Effort"
+    patterns:
+      - pattern-either:
+          - pattern: md5(...)
+          - pattern: sha1(...)
+          - pattern: hash("md5", ...)
+          - pattern: hash("sha1", ...)
+
+  # ---------------------------------------------------------------------------
+  # §15 — Weak randomness for security-bearing values
+  # ---------------------------------------------------------------------------
+  - id: php-weak-random-token
+    languages: [php]
+    severity: WARNING
+    message: >-
+      rand()/mt_rand()/uniqid() are not cryptographically secure. For tokens/nonces/IDs/salts use
+      random_bytes()/random_int(). OK only for non-security values (§15, CWE-330/338).
+    metadata:
+      baseline: "§15"
+      category: crypto
+      cwe: "CWE-330: Use of Insufficiently Random Values"
+    patterns:
+      - pattern-either:
+          - pattern: rand(...)
+          - pattern: mt_rand(...)
+          - pattern: uniqid(...)
