@@ -48,8 +48,13 @@ If source isn't reachable, it degrades honestly to a black-box (Stage 1) pass an
 
 - **[Claude Code](https://docs.claude.com/en/docs/claude-code)** (v2.1.x+).
 - **Scanners:** `curl` (Stage 1), `semgrep` and `gitleaks` (Stage 2), `openssl` (optional, TLS
-  cert expiry). Run `bash plugins/censor/skills/censor/scripts/check_deps.sh` to see what's
-  present and how to install what's missing. Any missing tool degrades gracefully.
+  cert expiry). On its first run the skill checks these, prints the **OS-appropriate** install
+  command for anything missing (`winget` on Windows, `brew`/`pipx` on Mac/Linux), and **offers to
+  install them for you** (with your confirmation). Any missing tool degrades gracefully.
+- **Windows note:** `gitleaks` installs cleanly (`winget install Gitleaks.Gitleaks`), but
+  **`semgrep` has no native Windows support** — run Censor from **WSL**, use **Docker**
+  (`scan_rules.sh` auto-uses `semgrep/semgrep` if Docker is present), or run without semgrep
+  (probe + gitleaks + the LLM review still apply).
 
 ## Install
 

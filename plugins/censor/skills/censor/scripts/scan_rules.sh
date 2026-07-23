@@ -22,26 +22,51 @@ fi
 JSON_OUT=""
 if [ "${2:-}" = "--json" ]; then JSON_OUT="${3:-}"; fi
 
-if ! command -v semgrep >/dev/null 2>&1; then
-  echo "scan_rules.sh: semgrep not installed — Stage 2 rule scan skipped." >&2
-  echo "  install: pipx install semgrep  (or)  pip install semgrep  (or)  brew install semgrep" >&2
-  exit 3
-fi
 if [ ! -f "$RULES" ]; then
   echo "scan_rules.sh: ruleset not found at $RULES" >&2
   exit 3
 fi
 
-echo "Running semgrep baseline rules against: $SRC"
-echo "Ruleset: $RULES"
-echo
-
-# Human-readable pass (semgrep's own formatting), non-fatal on findings.
-semgrep --quiet --config "$RULES" "$SRC" || true
-
-# Optional machine-readable pass for the skill.
-if [ -n "$JSON_OUT" ]; then
-  semgrep --quiet --config "$RULES" "$SRC" --json --output "$JSON_OUT" || true
+run_native() {
+  echo "Running semgrep baseline rules against: $SRC"
+  echo "Ruleset: $RULES"
   echo
-  echo "JSON written to: $JSON_OUT"
+  semgrep --quiet --config "$RULES" "$SRC" || true
+  if [ -n "$JSON_OUT" ]; then
+    semgrep --quiet --config "$RULES" "$SRC" --json --output "$JSON_OUT" || true
+    echo; echo "JSON written to: $JSON_OUT"
+  fi
+}
+
+run_docker() {
+  # Best-effort fallback for platforms without native semgrep (e.g. Windows).
+  # NOTE: Docker volume-mount paths can need adjustment on Windows/Git Bash; if
+  # mounts fail there, run Censor from WSL or install semgrep inside WSL instead.
+  echo "Running semgrep via Docker (semgrep/semgrep) — native semgrep not found."
+  local rules_dir rules_file src_dir src_arg
+  rules_dir="$(cd "$(dirname "$RULES")" && pwd)"
+  rules_file="$(basename "$RULES")"
+  if [ -d "$SRC" ]; then
+    src_dir="$(cd "$SRC" && pwd)"; src_arg="/src"
+  else
+    src_dir="$(cd "$(dirname "$SRC")" && pwd)"; src_arg="/src/$(basename "$SRC")"
+  fi
+  docker run --rm -v "$rules_dir:/rules:ro" -v "$src_dir:/src:ro" \
+    semgrep/semgrep semgrep --quiet --config "/rules/$rules_file" "$src_arg" || true
+  if [ -n "$JSON_OUT" ]; then
+    docker run --rm -v "$rules_dir:/rules:ro" -v "$src_dir:/src:ro" \
+      semgrep/semgrep semgrep --quiet --config "/rules/$rules_file" "$src_arg" --json 2>/dev/null > "$JSON_OUT" || true
+    echo; echo "JSON written to: $JSON_OUT"
+  fi
+}
+
+if command -v semgrep >/dev/null 2>&1; then
+  run_native
+elif command -v docker >/dev/null 2>&1; then
+  run_docker
+else
+  echo "scan_rules.sh: semgrep not installed (and no Docker fallback) — Stage 2 rule scan skipped." >&2
+  echo "  install: pipx install semgrep | pip install semgrep | brew install semgrep" >&2
+  echo "  (Windows: semgrep has no native support — use WSL or Docker, or run without it.)" >&2
+  exit 3
 fi
