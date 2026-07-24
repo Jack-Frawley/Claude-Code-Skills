@@ -33,8 +33,9 @@ this line," which is an acceptable cost for a review tool.
 | `php-open-redirect` | §8 Transport | WARNING | `header()` built from `$_GET`/`$_POST`/`$_REQUEST`/`$_COOKIE` — open redirect / header injection; allowlist the target or use a same-origin path. CWE-601. |
 | `php-debug-constant-true` | §12 Info-disclosure | WARNING | `const DEBUG = true` / `define('DEBUG', true)` — app debug flag left on; typically switches error handlers to raw exception text (DSN, server, SQL errors). CWE-489/209. |
 
-**Rule count: 20 PHP+JS** (19 PHP, 1 JS/TS) + 11 Python (see the Python section) = **31 total**. Fixtures:
-`tests/php_unserialize.php`, `tests/php_ldap.php`, `tests/php_crypto.php` cover the four crypto/injection additions.
+**Rule count: 23 PHP+JS** (19 PHP, 4 JS/TS) + 11 Python + 5 Java + 6 C# + 3 Dockerfile = **48 total**
+(see the per-language sections below). Fixtures for the crypto/injection additions:
+`tests/php_unserialize.php`, `tests/php_ldap.php`, `tests/php_crypto.php`.
 
 ## Test fixtures
 
@@ -246,3 +247,57 @@ semgrep --test --config python-baseline.yml tests/
 - **Default-insecure Jinja `Environment()`** — an `Environment()` with *no* `autoescape` argument
   defaults to unescaped in older/base configs, but proving that *absence* across constructors is not a
   single-line pattern; only the explicit `autoescape=False` is flagged.
+
+## JavaScript / TypeScript rule catalog
+
+| Rule id | Baseline § | Severity | Enforces / detects |
+|---|---|---|---|
+| `innerhtml-string-build` | §3 / §18 | WARNING | Untrusted value string-built into `.innerHTML`/`.outerHTML`/`insertAdjacentHTML`/`document.write`. CWE-79. |
+| `js-child-process-exec-concat` | §16 | ERROR | String concatenation into `child_process.exec`/`execSync` — command injection. Use `execFile`/`spawn` with argv. CWE-78. |
+| `js-eval-dynamic` | §16 | ERROR | `eval()`/`new Function()` on a non-literal — code injection. Literals excluded. CWE-95. |
+| `js-jwt-alg-none` | §16 | ERROR | `algorithms: ['none']` in JWT verification — accepts forged unsigned tokens. CWE-347. |
+
+**JS/TS rule count: 4** (shipped in `web-security-baseline.yml` alongside the PHP rules).
+
+## Java rule catalog (`java-baseline.yml`)
+
+| Rule id | Baseline § | Severity | Enforces / detects |
+|---|---|---|---|
+| `java-native-deserialization` | §19 | ERROR | `ObjectInputStream.readObject()` — native-deserialization gadget-chain RCE. CWE-502. |
+| `java-runtime-exec-concat` | §16 | ERROR | String concatenation into `Runtime.exec()` — command injection. CWE-78. |
+| `java-query-concat` | §16 | ERROR | Concatenation into `createQuery`/`createNativeQuery`/`executeQuery` — SQL/HQL/JPQL injection. CWE-89. |
+| `java-spel-injection` | §16 | ERROR | `parseExpression()` on a non-constant — SpEL/OGNL server-side expression injection. CWE-917. |
+| `java-xml-parser-xxe-review` | §19 | WARNING | XML parser factory constructed (XXE-vulnerable by default) — verify `disallow-doctype-decl`. CWE-611. |
+
+**Java rule count: 5.**
+
+## C# / .NET rule catalog (`csharp-baseline.yml`)
+
+| Rule id | Baseline § | Severity | Enforces / detects |
+|---|---|---|---|
+| `csharp-insecure-deserializer` | §16 | ERROR | `BinaryFormatter`/`NetDataContractSerializer`/`SoapFormatter`/`LosFormatter`/`ObjectStateFormatter` — RCE gadgets. CWE-502. |
+| `csharp-sql-raw` | §16 | ERROR | `FromSqlRaw`/`ExecuteSqlRaw`/`SqlCommand` on a non-literal (interpolated `$"..."`) — SQL injection. Literal+params excluded. CWE-89. |
+| `csharp-html-raw` | §16 | ERROR | `Html.Raw()` on a non-constant — defeats Razor auto-encoding (XSS). CWE-79. |
+| `csharp-json-typenamehandling` | §19 | ERROR | `TypeNameHandling.All`/`Auto`/`Objects`/`Arrays` — Json.NET polymorphic-typing deserialization RCE. CWE-502. |
+| `csharp-process-start-concat` | §16 | ERROR | Concatenation into `Process.Start`/`ProcessStartInfo` — command injection. CWE-78. |
+| `csharp-xxe-dtd-parse` | §19 | ERROR | `DtdProcessing.Parse` / `new XmlUrlResolver()` — XXE enabled. CWE-611. |
+
+**C# rule count: 6.**
+
+## Dockerfile rule catalog (`dockerfile-baseline.yml`)
+
+| Rule id | Baseline § | Severity | Enforces / detects |
+|---|---|---|---|
+| `dockerfile-unpinned-base-latest` | §20 | WARNING | `FROM image:latest` — unpinned base; pin to a `@sha256:` digest. CWE-1357. |
+| `dockerfile-secret-in-env-arg` | §20 / §1 | ERROR | Secret-looking value in `ENV`/`ARG` — baked into layer history. CWE-798. |
+| `dockerfile-runs-as-root` | §20 | WARNING | `USER root` with no later privilege drop. CWE-250. |
+
+**Dockerfile rule count: 3.**
+
+## Language coverage vs the baseline
+
+Statically ruled today: **PHP, Python, JavaScript/TypeScript, Java, C#, Dockerfile** (+ PowerShell
+via PSScriptAnalyzer, + probe/web-root stages). Baseline surfaces still **LLM-review-only** (no
+rule): Shell/Bash (shellcheck-class — not yet wired), VBA/Office macros, GitHub Actions YAML
+(`pull_request_target` / unpinned `uses:` / `${{ github.event }}`-in-`run:` — fiddly in semgrep
+YAML, deferred), and the reasoning-bound classes (CSRF absence, IDOR, eligibility) unchanged.

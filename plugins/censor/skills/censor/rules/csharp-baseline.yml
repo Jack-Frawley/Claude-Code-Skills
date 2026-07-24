@@ -1,0 +1,128 @@
+# Censor — C# / .NET security baseline (ASP.NET, services)
+# Maps to SECURITY_BASELINE.md §16 (C#/.NET) and §19 (serialization / XXE).
+# semgrep supports C# natively; these are the statically-checkable items.
+rules:
+  # ---------------------------------------------------------------------------
+  # §16 — Insecure .NET deserializers (RCE gadgets, full stop)
+  # ---------------------------------------------------------------------------
+  - id: csharp-insecure-deserializer
+    languages: [csharp]
+    severity: ERROR
+    message: >-
+      BinaryFormatter/NetDataContractSerializer/SoapFormatter/LosFormatter/ObjectStateFormatter
+      deserialize arbitrary types and are RCE gadgets on untrusted data (BinaryFormatter is
+      obsolete for this reason). Use System.Text.Json or a contract serializer with known types
+      (§16, CWE-502).
+    metadata:
+      baseline: "§16"
+      category: deserialization
+      cwe: "CWE-502: Deserialization of Untrusted Data"
+    patterns:
+      - pattern-either:
+          - pattern: new BinaryFormatter()
+          - pattern: new NetDataContractSerializer()
+          - pattern: new SoapFormatter()
+          - pattern: new LosFormatter()
+          - pattern: new ObjectStateFormatter()
+
+  # ---------------------------------------------------------------------------
+  # §16 — Raw SQL: FromSqlRaw / ExecuteSqlRaw / SqlCommand with a non-literal
+  # ---------------------------------------------------------------------------
+  - id: csharp-sql-raw
+    languages: [csharp]
+    severity: ERROR
+    message: >-
+      FromSqlRaw/ExecuteSqlRaw/SqlCommand built from a non-constant (typically an interpolated
+      $"..." string) is SQL injection. Use parameters (@p / FromSqlInterpolated / EF LINQ); a
+      literal-with-{0}-placeholders plus a params array is the safe form (§16, CWE-89).
+    metadata:
+      baseline: "§16"
+      category: injection
+      cwe: "CWE-89: SQL Injection"
+    patterns:
+      - pattern-either:
+          - pattern: $X.FromSqlRaw($ARG)
+          - pattern: $X.ExecuteSqlRaw($ARG)
+          - pattern: new SqlCommand($ARG)
+          - pattern: new SqlCommand($ARG, ...)
+      - pattern-not: $X.FromSqlRaw("...")
+      - pattern-not: $X.ExecuteSqlRaw("...")
+      - pattern-not: new SqlCommand("...")
+      - pattern-not: new SqlCommand("...", ...)
+
+  # ---------------------------------------------------------------------------
+  # §16 — Razor auto-encoding defeated with untrusted data
+  # ---------------------------------------------------------------------------
+  - id: csharp-html-raw
+    languages: [csharp]
+    severity: ERROR
+    message: >-
+      Html.Raw() on a non-constant emits unencoded HTML — the XSS Razor had closed. Return the
+      value through normal (encoded) output, or sanitize with a vetted allowlist sanitizer first
+      (§16, CWE-79).
+    metadata:
+      baseline: "§16"
+      category: xss
+      cwe: "CWE-79: Cross-site Scripting"
+    patterns:
+      - pattern: Html.Raw($X)
+      - pattern-not: Html.Raw("...")
+
+  # ---------------------------------------------------------------------------
+  # §19 — Json.NET polymorphic type handling (deserialization RCE)
+  # ---------------------------------------------------------------------------
+  - id: csharp-json-typenamehandling
+    languages: [csharp]
+    severity: ERROR
+    message: >-
+      TypeNameHandling.All/Auto/Objects lets the payload choose the CLR type to instantiate — a
+      Json.NET deserialization RCE. Use TypeNameHandling.None (default) and bind to known DTOs
+      (§19, CWE-502).
+    metadata:
+      baseline: "§19"
+      category: deserialization
+      cwe: "CWE-502: Deserialization of Untrusted Data"
+    patterns:
+      - pattern-either:
+          - pattern: TypeNameHandling.All
+          - pattern: TypeNameHandling.Auto
+          - pattern: TypeNameHandling.Objects
+          - pattern: TypeNameHandling.Arrays
+
+  # ---------------------------------------------------------------------------
+  # §16 — Command injection: concatenation into Process.Start
+  # ---------------------------------------------------------------------------
+  - id: csharp-process-start-concat
+    languages: [csharp]
+    severity: ERROR
+    message: >-
+      A string concatenated into Process.Start()/ProcessStartInfo is command injection if any
+      part is request-influenced. Use a fixed FileName + an argument list, and never pass user
+      data through a shell (§16, CWE-78).
+    metadata:
+      baseline: "§16"
+      category: command-injection
+      cwe: "CWE-78: OS Command Injection"
+    patterns:
+      - pattern-either:
+          - pattern: Process.Start($X + $Y)
+          - pattern: new ProcessStartInfo($X + $Y)
+
+  # ---------------------------------------------------------------------------
+  # §19 — XML DTD processing explicitly enabled (XXE)
+  # ---------------------------------------------------------------------------
+  - id: csharp-xxe-dtd-parse
+    languages: [csharp]
+    severity: ERROR
+    message: >-
+      DtdProcessing.Parse (or XmlUrlResolver on an untrusted reader) enables XML external
+      entities — XXE (file read / SSRF / DoS). Use DtdProcessing.Prohibit and a null XmlResolver
+      (§19, CWE-611).
+    metadata:
+      baseline: "§19"
+      category: xxe
+      cwe: "CWE-611: Improper Restriction of XML External Entity Reference"
+    patterns:
+      - pattern-either:
+          - pattern: DtdProcessing.Parse
+          - pattern: new XmlUrlResolver()

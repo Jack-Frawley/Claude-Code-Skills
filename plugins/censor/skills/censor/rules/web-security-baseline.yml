@@ -469,3 +469,61 @@ rules:
           - pattern: define('DEBUG', true);
           - pattern: define("DEBUG", true);
           - pattern: $DEBUG = true;
+
+  # ---------------------------------------------------------------------------
+  # §16 (JS) — Command injection: concatenation into child_process.exec
+  # ---------------------------------------------------------------------------
+  - id: js-child-process-exec-concat
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: >-
+      A string concatenated into child_process.exec/execSync is command injection. Use
+      execFile/spawn with an argv array and a fixed program; never exec a built command line, and
+      never spawn with shell:true on untrusted args (§16, CWE-78).
+    metadata:
+      baseline: "§16"
+      category: command-injection
+      cwe: "CWE-78: OS Command Injection"
+    patterns:
+      - pattern-either:
+          - pattern: $CP.exec($X + $Y)
+          - pattern: $CP.execSync($X + $Y)
+          - pattern: exec($X + $Y)
+          - pattern: execSync($X + $Y)
+
+  # ---------------------------------------------------------------------------
+  # §16 (JS) — eval / new Function on non-constant input
+  # ---------------------------------------------------------------------------
+  - id: js-eval-dynamic
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: >-
+      eval()/new Function() executes arbitrary code — never on request/DB-sourced input. Parse
+      data (JSON.parse) instead of evaluating it (§16, CWE-95).
+    metadata:
+      baseline: "§16"
+      category: code-injection
+      cwe: "CWE-95: Eval Injection"
+    patterns:
+      - pattern-either:
+          - pattern: eval($X)
+          - pattern: new Function($X)
+      - pattern-not: eval("...")
+      - pattern-not: new Function("...")
+
+  # ---------------------------------------------------------------------------
+  # §16 (JS) — JWT accepted with the "none" algorithm
+  # ---------------------------------------------------------------------------
+  - id: js-jwt-alg-none
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: >-
+      Accepting algorithms:['none'] (or an empty/attacker-chosen alg list) lets a caller forge
+      an unsigned token. Pin the expected algorithm in jwt.verify (e.g. algorithms:['RS256'])
+      and never trust jwt.decode() as a gate (§16, CWE-347).
+    metadata:
+      baseline: "§16"
+      category: broken-auth
+      cwe: "CWE-347: Improper Verification of Cryptographic Signature"
+    patterns:
+      - pattern-regex: algorithms\s*:\s*\[\s*['"]none['"]

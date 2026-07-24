@@ -1,0 +1,53 @@
+# Censor — Dockerfile / container baseline
+# Maps to SECURITY_BASELINE.md §20 (CI/CD & build pipeline) and §1 (secrets).
+rules:
+  # ---------------------------------------------------------------------------
+  # §20 — Unpinned base image (a moving tag can be repointed under you)
+  # ---------------------------------------------------------------------------
+  - id: dockerfile-unpinned-base-latest
+    languages: [dockerfile]
+    severity: WARNING
+    message: >-
+      Base image pinned to a moving tag (:latest). Pin to a digest (FROM image@sha256:...) so the
+      build is reproducible and cannot be swapped under you (§20, CWE-1357).
+    metadata:
+      baseline: "§20"
+      category: supply-chain
+      cwe: "CWE-1357: Reliance on Insufficiently Trustworthy Component"
+    patterns:
+      - pattern-either:
+          - pattern: FROM $IMG:latest
+          - pattern: FROM $IMG:latest AS $STAGE
+
+  # ---------------------------------------------------------------------------
+  # §1/§20 — Secret baked into an image layer (persists in history)
+  # ---------------------------------------------------------------------------
+  - id: dockerfile-secret-in-env-arg
+    languages: [dockerfile]
+    severity: ERROR
+    message: >-
+      A secret-looking value in ENV/ARG is baked into the image and persists in layer history
+      even if later removed. Inject secrets at run time (env/secret mount / BuildKit --secret),
+      never in the Dockerfile (§1/§20, CWE-798).
+    metadata:
+      baseline: "§20"
+      category: secrets
+      cwe: "CWE-798: Use of Hard-coded Credentials"
+    patterns:
+      - pattern-regex: (?i)^\s*(ENV|ARG)\s+\w*(SECRET|PASSWORD|PASSWD|APIKEY|API_KEY|ACCESS_KEY|PRIVATE_KEY|TOKEN)\w*\s*[=\s]\S
+
+  # ---------------------------------------------------------------------------
+  # §20 — Container runs as root (no privilege drop)
+  # ---------------------------------------------------------------------------
+  - id: dockerfile-runs-as-root
+    languages: [dockerfile]
+    severity: WARNING
+    message: >-
+      Image ends up running as root. Add a non-root USER before the entrypoint so a container
+      escape does not start with root (§20, CWE-250).
+    metadata:
+      baseline: "§20"
+      category: least-privilege
+      cwe: "CWE-250: Execution with Unnecessary Privileges"
+    patterns:
+      - pattern: USER root

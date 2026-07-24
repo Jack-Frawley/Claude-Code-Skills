@@ -1,0 +1,101 @@
+# Censor — Java security baseline (Spring / Jakarta EE)
+# Maps to SECURITY_BASELINE.md §16 (Java) and §19 (serialization / XXE).
+# semgrep supports Java natively; these are the statically-checkable items.
+rules:
+  # ---------------------------------------------------------------------------
+  # §16/§19 — Native Java deserialization of untrusted bytes (gadget-chain RCE)
+  # ---------------------------------------------------------------------------
+  - id: java-native-deserialization
+    languages: [java]
+    severity: ERROR
+    message: >-
+      ObjectInputStream.readObject() deserializes arbitrary Java types and is the classic
+      gadget-chain RCE when the bytes are untrusted. Use JSON/DTOs; if unavoidable, install a
+      strict ObjectInputFilter allowlist (§16/§19, CWE-502).
+    metadata:
+      baseline: "§19"
+      category: deserialization
+      cwe: "CWE-502: Deserialization of Untrusted Data"
+    patterns:
+      - pattern-either:
+          - pattern: (ObjectInputStream $O).readObject()
+          - pattern: new ObjectInputStream(...).readObject()
+
+  # ---------------------------------------------------------------------------
+  # §16 — Command injection: concatenation into Runtime.exec
+  # ---------------------------------------------------------------------------
+  - id: java-runtime-exec-concat
+    languages: [java]
+    severity: ERROR
+    message: >-
+      A string concatenated into Runtime.exec() is command injection if any part is
+      request-influenced. Use ProcessBuilder with an argument list and a fixed program path;
+      never build a command line by concatenation (§16, CWE-78).
+    metadata:
+      baseline: "§16"
+      category: command-injection
+      cwe: "CWE-78: OS Command Injection"
+    patterns:
+      - pattern-either:
+          - pattern: Runtime.getRuntime().exec($X + $Y)
+          - pattern: $RT.exec($X + $Y)
+
+  # ---------------------------------------------------------------------------
+  # §16 — SQL/HQL/JPQL built by string concatenation
+  # ---------------------------------------------------------------------------
+  - id: java-query-concat
+    languages: [java]
+    severity: ERROR
+    message: >-
+      A query string built by concatenation reaches createQuery/executeQuery — SQL/HQL/JPQL
+      injection. Use bound named parameters (setParameter) or Spring Data derived queries; never
+      concatenate request data into query text (§16, CWE-89).
+    metadata:
+      baseline: "§16"
+      category: injection
+      cwe: "CWE-89: SQL Injection"
+    patterns:
+      - pattern-either:
+          - pattern: $S.createQuery($X + $Y)
+          - pattern: $S.createNativeQuery($X + $Y)
+          - pattern: $S.executeQuery($X + $Y)
+
+  # ---------------------------------------------------------------------------
+  # §16 — Server-side expression injection (SpEL / OGNL)
+  # ---------------------------------------------------------------------------
+  - id: java-spel-injection
+    languages: [java]
+    severity: ERROR
+    message: >-
+      parseExpression() on a non-constant string is server-side expression injection (the
+      SpEL/OGNL/Struts RCE class). Expression strings must be constants — never built from
+      request data (§16, CWE-917).
+    metadata:
+      baseline: "§16"
+      category: expression-injection
+      cwe: "CWE-917: Expression Language Injection"
+    patterns:
+      - pattern: $P.parseExpression($X)
+      - pattern-not: $P.parseExpression("...")
+
+  # ---------------------------------------------------------------------------
+  # §19 — XML parser left XXE-vulnerable (Java parsers are unsafe by default)
+  # ---------------------------------------------------------------------------
+  - id: java-xml-parser-xxe-review
+    languages: [java]
+    severity: WARNING
+    message: >-
+      XML parser factory constructed — Java's XML parsers resolve external entities BY DEFAULT
+      (XXE: local-file read, SSRF, billion-laughs DoS). Verify this instance sets
+      disallow-doctype-decl=true (or disables external entities) before parsing untrusted XML
+      (§19, CWE-611).
+    metadata:
+      baseline: "§19"
+      category: xxe
+      cwe: "CWE-611: Improper Restriction of XML External Entity Reference"
+    patterns:
+      - pattern-either:
+          - pattern: DocumentBuilderFactory.newInstance()
+          - pattern: SAXParserFactory.newInstance()
+          - pattern: XMLInputFactory.newInstance()
+          - pattern: XMLReaderFactory.createXMLReader()
