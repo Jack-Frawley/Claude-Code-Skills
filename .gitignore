@@ -7,6 +7,10 @@ report.json
 # Advisories are written off-repo by design; never commit them
 Censor_Advisory_*.md
 
+# Python bytecode from running the fixture tests
+__pycache__/
+*.pyc
+
 # OS / editor noise
 .DS_Store
 Thumbs.db
