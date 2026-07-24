@@ -12,6 +12,8 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC=""; URL=""; OUT="./censor-out"
 
+WEBROOT="${WEBROOT:-}"
+
 # pwsh is a Windows program under Git Bash; convert MSYS paths to Windows paths for it.
 winpath() { if command -v cygpath >/dev/null 2>&1; then cygpath -w "$1"; else printf '%s' "$1"; fi; }
 
@@ -19,21 +21,23 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --source)  SRC="${2:-}"; shift 2 ;;
     --url)     URL="${2:-}"; shift 2 ;;
+    --webroot) WEBROOT="${2:-}"; shift 2 ;;
     --out-dir) OUT="${2:-}"; shift 2 ;;
-    -h|--help) echo "usage: run_deterministic.sh --source <path> [--url <base-url>] [--out-dir <dir>]"; exit 2 ;;
+    -h|--help) echo "usage: run_deterministic.sh [--source <path>] [--url <base-url>] [--webroot <document-root>] [--out-dir <dir>]"; exit 2 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
 
-if [ -z "$SRC" ] && [ -z "$URL" ]; then
-  echo "run_deterministic.sh: need --source and/or --url" >&2
+if [ -z "$SRC" ] && [ -z "$URL" ] && [ -z "${WEBROOT:-}" ]; then
+  echo "run_deterministic.sh: need --source and/or --url and/or --webroot" >&2
   exit 2
 fi
 mkdir -p "$OUT"
 
 echo "================================================================"
 echo " Censor — deterministic pipeline (read-only)"
-echo " source: ${SRC:-<none>}   url: ${URL:-<none>}   out: $OUT"
+echo " source: ${SRC:-<none>}   url: ${URL:-<none>}
+ webroot: ${WEBROOT:-<none>}   out: $OUT"
 echo "================================================================"
 echo
 
@@ -44,6 +48,12 @@ echo
 if [ -n "$URL" ]; then
   echo "--- Stage 1: probe ($URL) ---"
   bash "$SCRIPT_DIR/probe.sh" "$URL" --out "$OUT/probe.json" || true
+  echo
+fi
+
+if [ -n "${WEBROOT:-}" ]; then
+  echo "--- Stage 1.5: web-root inventory ($WEBROOT) ---"
+  bash "$SCRIPT_DIR/scan_webroot.sh" "$WEBROOT" --out "$OUT/webroot.json" || true
   echo
 fi
 

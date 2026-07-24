@@ -266,3 +266,19 @@ rules:
       - pattern-either:
           - pattern: jinja2.Environment(..., autoescape=False, ...)
           - pattern: Environment(..., autoescape=False, ...)
+
+  # ---------------------------------------------------------------------------
+  - id: py-odbc-trust-server-cert
+    languages: [python]
+    severity: WARNING
+    message: >-
+      TrustServerCertificate=yes disables TLS certificate validation on the database
+      connection — the same channel that carries the DB password — so a MITM on the
+      DB path is undetectable. Install a trusted certificate on the SQL instance and
+      use Encrypt=yes;TrustServerCertificate=no (§14/§15, CWE-295).
+    metadata:
+      baseline: "§14"
+      category: transport
+      cwe: "CWE-295: Improper Certificate Validation"
+    patterns:
+      - pattern-regex: (?i)TrustServerCertificate\s*=\s*yes

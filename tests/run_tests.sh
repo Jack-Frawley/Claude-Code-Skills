@@ -72,8 +72,33 @@ else
 fi
 
 # 4) scripts parse cleanly
+echo "3b) scan_webroot.sh selftest + fixture detection"
+if bash "$SKILL/scripts/scan_webroot.sh" --selftest >/dev/null 2>&1; then
+  ok "scan_webroot selftest"
+else
+  bad "scan_webroot selftest"
+fi
+WRTMP=$(mktemp -d)
+mkdir -p "$WRTMP/_backups"
+: > "$WRTMP/site_backup_2026.zip"
+: > "$WRTMP/export.csv"
+: > "$WRTMP/index.php"
+WROUT=$(bash "$SKILL/scripts/scan_webroot.sh" "$WRTMP" --out "$WRTMP/r.json" 2>&1)
+if echo "$WROUT" | grep -q "CRIT" && echo "$WROUT" | grep -qi "archive"; then
+  ok "scan_webroot flags an archive in the root"
+else
+  bad "scan_webroot did not flag the archive fixture"
+fi
+if echo "$WROUT" | grep -qi "data-export"; then
+  ok "scan_webroot flags a data export"
+else
+  bad "scan_webroot did not flag the csv fixture"
+fi
+rm -rf "$WRTMP"
+echo
+
 echo "4) bash -n on all scripts"
-for s in check_deps.sh probe.sh scan_rules.sh scan_secrets.sh run_deterministic.sh; do
+for s in check_deps.sh probe.sh scan_webroot.sh scan_rules.sh scan_secrets.sh run_deterministic.sh; do
   if [ -f "$SCRIPTS/$s" ]; then
     if bash -n "$SCRIPTS/$s" 2>/dev/null; then ok "parse $s"; else bad "parse $s"; fi
   else

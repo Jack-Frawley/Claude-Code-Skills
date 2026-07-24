@@ -13,6 +13,7 @@ allowed-tools:
   - Bash(${CLAUDE_SKILL_DIR}/scripts/check_deps.sh *)
   - Bash(${CLAUDE_SKILL_DIR}/scripts/run_deterministic.sh *)
   - Bash(${CLAUDE_SKILL_DIR}/scripts/probe.sh *)
+  - Bash(${CLAUDE_SKILL_DIR}/scripts/scan_webroot.sh *)
   - Bash(${CLAUDE_SKILL_DIR}/scripts/scan_rules.sh *)
   - Bash(${CLAUDE_SKILL_DIR}/scripts/scan_secrets.sh *)
   - Bash(pwsh -NoProfile -File ${CLAUDE_SKILL_DIR}/scripts/scan_ps.ps1 *)
@@ -78,8 +79,14 @@ final coverage note:
 
 If the user did not already provide them, ask (this is the "opening prompt"):
 
-- **Target(s):** a **source path** (enables Stage 2 + 3) and/or a **live URL** (enables
-  Stage 1). Both is ideal. Note what you actually have.
+- **Target(s):** a **source path** (enables Stage 2 + 3), a **live URL** (enables Stage 1),
+  and — **ask for this explicitly** — the **document root on disk** (enables Stage 1.5).
+  All three is ideal. Note what you actually have.
+- **The document root is worth asking for even when you already have source.** The source
+  tree and the served directory are not the same thing: backups, data exports, archives and
+  installers accumulate in the served directory and appear in no repository. In a real audit
+  the worst finding existed only there. If the app is on a server you administer, ask for
+  the deployed path (e.g. the IIS physical path or Apache `DocumentRoot`), not the repo.
 - **Site-specific paths to probe** — **always ask this when you have a live URL.** The probe
   ships a *curated* list that finds CONVENTIONAL exposures (`.env`, `.git/config`,
   `phpinfo.php`); it cannot guess filenames someone invented. Ask: *"Any app-specific files
@@ -118,6 +125,33 @@ bash ${CLAUDE_SKILL_DIR}/scripts/probe.sh <base-url>
 ```
 Reads security headers, TLS/HTTPS posture, and a curated exposed-path list (read-only,
 status codes only — it never downloads secret bodies). Parse its JSON output.
+
+**Stage 1.5 — web-root inventory (if you can reach the DOCUMENT ROOT on disk):**
+```
+bash ${CLAUDE_SKILL_DIR}/scripts/scan_webroot.sh <document-root-path>
+```
+**Run this whenever filesystem access is possible — it is the highest-yield deterministic
+stage and nothing else substitutes for it.** Stages 1–3 all look at *code* or at *paths you
+already know*; this one asks what is actually sitting in the served directory. It flags by
+CATEGORY (archives, database dumps, data exports, credential files, backup directories,
+installers, diagnostics, PHP inside statically-served files), assesses whether the server
+config denies by default, and reports whether the document root is a dedicated `public/`
+directory or the application directory itself.
+
+*Why it exists:* in a real audit the single worst finding was a 289 MB
+`FullBackup_<site>_<date>.zip` — a complete copy of the application including every
+credential — sitting in the web root. No rule matches a `.zip`, and the probe's curated list
+cannot guess that filename. **Only listing the directory finds it.** The same pass also
+surfaced employee-data CSV exports and an `.xlsm` workbook, none of which any other stage
+can see.
+
+It reads names, sizes and extensions only — never file contents (the one exception is
+`.html`/`.htm`/`.txt`/`.inc`, checked for embedded `<?php`, which are served as public static
+text by definition). So it cannot leak a secret it discovers.
+
+**Its findings mean "this file EXISTS in the root", not "this file is downloadable."**
+Confirm each with a Stage-1 probe of the exact path (Step 5) before calling it
+outsider-exploitable — handler mappings differ (`.json` is served, `.py` usually is not).
 
 **Stage 2 (if a source path is available):**
 ```

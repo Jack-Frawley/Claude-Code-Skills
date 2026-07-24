@@ -31,8 +31,9 @@ this line," which is an acceptable cost for a review tool.
 | `php-weak-hash` | §15 Crypto | WARNING | `md5()`/`sha1()`/`hash("md5"/"sha1")` — weak for passwords/tokens (use `password_hash` ARGON2ID). CWE-916/328. |
 | `php-weak-random-token` | §15 Crypto | WARNING | `rand()`/`mt_rand()`/`uniqid()` — not a CSPRNG; for tokens/nonces/salts use `random_bytes`/`random_int`. CWE-330/338. |
 | `php-open-redirect` | §8 Transport | WARNING | `header()` built from `$_GET`/`$_POST`/`$_REQUEST`/`$_COOKIE` — open redirect / header injection; allowlist the target or use a same-origin path. CWE-601. |
+| `php-debug-constant-true` | §12 Info-disclosure | WARNING | `const DEBUG = true` / `define('DEBUG', true)` — app debug flag left on; typically switches error handlers to raw exception text (DSN, server, SQL errors). CWE-489/209. |
 
-**Rule count: 19 PHP+JS** (18 PHP, 1 JS/TS) + 10 Python (see the Python section) = **29 total**. Fixtures:
+**Rule count: 20 PHP+JS** (19 PHP, 1 JS/TS) + 11 Python (see the Python section) = **31 total**. Fixtures:
 `tests/php_unserialize.php`, `tests/php_ldap.php`, `tests/php_crypto.php` cover the four crypto/injection additions.
 
 ## Test fixtures
@@ -88,6 +89,29 @@ These use constructs whose exact semgrep behavior should be verified against a l
 - **`hardcoded-secret-define` metavariable-regex** — the value regex `^['"].+['"]$` is meant to fire
   only on string *literals* (excluding `getenv(...)`); the `$VARNAME = $VAL` branch is broad and
   filtered by name regex `(?i)(password|passwd|secret)`. Confirm both branches behave.
+
+## Covered by Stage 1.5 (web-root inventory), not by rules
+
+`scripts/scan_webroot.sh` covers a class no ruleset can reach, because the finding is not in
+the code — it is a **file sitting in the served directory**. A rule can only match text it is
+pointed at; a probe can only ask about paths it already knows. Neither enumerates the root.
+
+| Category | Example that a real audit found |
+|---|---|
+| `archive` | a 289 MB `FullBackup_<site>_<date>.zip` — the whole app plus every credential |
+| `data-export` | employee-data `.csv` exports; a staff workload `.xlsm` |
+| `db-dump` | `.sql` schema files |
+| `credential-file` | `*tokens*.json`, `Secret Value.txt`, `.env`, private keys |
+| `backup-dir` | `_backups/` whose `.php` contents still **execute** |
+| `source-disclosure` | `<?php` inside a `.html` file — served as text, source delivered verbatim |
+| `root_structure` | the document root **is** the application directory (no `public/` boundary) |
+| `server_config` | `web.config` with no `<requestFiltering>` — the structural cause |
+
+Severity is coupled to structure: a missing deny-list on a dedicated `public/` root is
+MEDIUM (defence-in-depth); on a root that *is* the app directory it is HIGH (the cause).
+
+Stage 1.5 reports **existence**, not reachability — always confirm with a Stage-1 probe of the
+exact path before calling something downloadable (`.json` is served; `.py` usually is not).
 
 ## Not covered by rules (LLM-only — need human/LLM judgment, not static patterns)
 

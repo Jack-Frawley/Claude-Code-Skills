@@ -449,3 +449,23 @@ rules:
           - pattern: $_POST[...]
           - pattern: $_REQUEST[...]
           - pattern: $_COOKIE[...]
+
+  # ---------------------------------------------------------------------------
+  - id: php-debug-constant-true
+    languages: [php]
+    severity: WARNING
+    message: >-
+      Application DEBUG flag is enabled. This typically switches error handlers from
+      safe text to raw exception messages (DSN, server names, SQL errors) in the
+      browser — the safe strings are usually already written, just switched off.
+      Set it false in production and log detail server-side (§12, CWE-489/209).
+    metadata:
+      baseline: "§12"
+      category: info-disclosure
+      cwe: "CWE-489: Active Debug Code"
+    patterns:
+      - pattern-either:
+          - pattern: const DEBUG = true;
+          - pattern: define('DEBUG', true);
+          - pattern: define("DEBUG", true);
+          - pattern: $DEBUG = true;
