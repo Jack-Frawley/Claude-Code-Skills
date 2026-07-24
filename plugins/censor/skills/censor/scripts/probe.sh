@@ -403,10 +403,34 @@ probe_one_path() {
       clen=$(get_header "Content-Length" "$blob" || true)
       [ -z "$ctype" ] && ctype="unknown"
       [ -z "$clen" ] && clen="unknown"
-      sev_line "HIGH" "${path} -> 200 EXPOSED (Content-Type: ${ctype}, Content-Length: ${clen})"
-      add_finding "exposed_path" "HIGH" \
-        "${path} returned 200 (exposed)" \
-        "status 200; Content-Type: ${ctype}; Content-Length: ${clen}"
+      if [ "$origin" = "operator" ]; then
+        # An operator supplies paths to get their STATUS, not because each is
+        # inherently secret — many are ordinary pages, and a 200 on a homepage is
+        # expected. The probe cannot tell a leaked credential file from an app page,
+        # so it discriminates on what is being SERVED: file/data content types are a
+        # finding; an HTML page is an observation for the reviewer to classify.
+        case "$ctype" in
+          *text/html*|*application/xhtml*)
+            sev_line "INFO" "${path} -> 200 reachable (${ctype}) — page; classify by behaviour, not status"
+            add_finding "path_reachable" "INFO" \
+              "${path} returned 200 (page reachable — not an exposure by itself)" \
+              "status 200; Content-Type: ${ctype}; Content-Length: ${clen}"
+            ;;
+          *)
+            sev_line "HIGH" "${path} -> 200 SERVES FILE/DATA (Content-Type: ${ctype}, Content-Length: ${clen})"
+            add_finding "exposed_path" "HIGH" \
+              "${path} returned 200 serving non-HTML content (${ctype})" \
+              "status 200; Content-Type: ${ctype}; Content-Length: ${clen}"
+            ;;
+        esac
+      else
+        # Curated paths are ones that must NEVER return 200 (.env, .git/config,
+        # phpinfo). Here a 200 is unambiguous regardless of content type.
+        sev_line "HIGH" "${path} -> 200 EXPOSED (Content-Type: ${ctype}, Content-Length: ${clen})"
+        add_finding "exposed_path" "HIGH" \
+          "${path} returned 200 (exposed)" \
+          "status 200; Content-Type: ${ctype}; Content-Length: ${clen}"
+      fi
       ;;
     403)
       sev_line "INFO" "${path} -> 403 blocked (good)"
@@ -447,9 +471,13 @@ probe_one_path() {
       # page is the no-credential path; a page that trusts a forged cookie does not
       # redirect. Reporting existence keeps legacy/bypass pages visible.
       if [ "$origin" = "operator" ]; then
-        sev_line "LOW " "${path} -> ${status} exists (redirects to ${loc})"
-        add_finding "path_exists_redirect" "LOW" \
-          "${path} exists and redirects (not proof of remediation)" \
+        # INFO, not a defect: a redirect to a login page is usually correct gating.
+        # It is recorded because EXISTENCE is the signal — a legacy page that should
+        # have been deleted still being present, and a page that trusts a forged
+        # cookie would not redirect at all. The reviewer decides which this is.
+        sev_line "INFO" "${path} -> ${status} exists (redirects to ${loc})"
+        add_finding "path_exists_redirect" "INFO" \
+          "${path} exists and redirects (existence noted; not proof of remediation)" \
           "status ${status}; Location: ${loc}"
       fi
       ;;
