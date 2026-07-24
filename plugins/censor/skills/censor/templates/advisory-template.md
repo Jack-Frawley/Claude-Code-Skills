@@ -43,5 +43,13 @@ just hidden).>
 ## Verification notes / caveats
 - **Live-verified <date>:** <the exact paths/probes that returned what — status/type only>.
 - **Corrected during verification:** <anything a scan claimed that a probe disproved>.
+- **Path coverage is not exhaustive (state this whenever a probe ran).** Censor probes a
+  *curated* path list plus any operator-supplied paths. It finds conventional exposures; it
+  cannot know site-specific filenames. **A clean probe means "none of the tested paths were
+  exposed" — never "nothing is exposed."** Only enumerating the web root from the filesystem
+  or source gives that assurance. Say so explicitly: a site owner reading "clean" as an
+  all-clear is the failure mode this note exists to prevent.
+- **A `3xx` is not remediation.** A legacy page that redirects still exists; the redirect is
+  the no-credential path. Report such paths as present, not as fixed.
 - Static findings are from a point-in-time source copy — confirm each against live code
   before applying (line numbers may drift). This is advisory; nothing was applied.

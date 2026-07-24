@@ -128,6 +128,18 @@ PSScriptAnalyzer / probe) or they need human/LLM review.
       `Referrer-Policy`.
 - [ ] **CSP from day 1** — see §8a. It's the header item most often skipped and most expensive
       to add later.
+- [ ] **[DAY-1] Redirects never downgrade the scheme.** A redirect issued from an HTTPS request
+      must target `https://` (or be scheme-relative/path-only). An HTTPS→`http://` redirect is
+      followed *in the clear*: cookies and any credentials submitted at the destination are exposed
+      on-path, and HSTS on the origin host does not protect a different hostname. (A02/A05,
+      CWE-319; Censor: probe — reported automatically.)
+- [ ] **[DAY-1] One canonical hostname.** Pick the canonical host and redirect all others to it
+      over HTTPS. Multiple live hostnames for one app fragment cookie scope and HSTS coverage, and
+      make "is this our site?" unanswerable for users. (CWE-1385; Censor: probe.)
+- [ ] **[DAY-1] No open redirects.** A redirect target taken from request data (`?next=`,
+      `?returnUrl=`) must be validated against an allowlist or constrained to a same-origin path —
+      never passed through as an absolute URL. Open redirects lend your domain's credibility to
+      phishing and can leak tokens via the `Referer` header. (A01, CWE-601; Censor: static/review.)
 
 ## 8a. CSP-clean from day one (the invariant that's free to hold, expensive to establish)
 
@@ -165,6 +177,23 @@ worth restructuring right now" *in the moment*, which is exactly why it must be 
 - [ ] No test/diagnostic endpoints in production. (Classic leak: `logintest.php`/`ldaptest.php`
       left in `public/` as unauthenticated directory-password oracles.) Delete scaffolding before deploy.
 - [ ] Dead code paths (old auth, superseded sync scripts) deleted, not left "just in case."
+- [ ] **[DAY-1] Secrets live OUTSIDE the web root.** Not "in a file the server happens not to
+      serve" — physically outside the directory the web server can reach, or in env vars. Any
+      credential inside the web root is one misconfiguration, one added MIME mapping, or one
+      copied-in server config away from being downloadable. (A05, CWE-538; Censor: probe + static.)
+- [ ] **[DAY-1] Deny-by-default static serving.** The web server must serve only the file types
+      the app actually needs (`.php`, `.css`, `.js`, images, fonts). Everything else — `.txt`,
+      `.json`, `.bak`, `.old`, `.sql`, `.config`, `.py`, `.log` — is denied by request filtering,
+      not left to chance. **This is the structural control**: fixing individually-exposed files is
+      whack-a-mole, whereas a deny-list config prevents the *next* one nobody thought to check.
+      _Worked contrast: in one audited estate, a site with request filtering returned 403 for every
+      dotfile probed, while a sibling site without it served a plaintext credential file and a live
+      API token straight from its web root._ (A05, CWE-552; Censor: probe.)
+- [ ] **A redirect is not remediation.** A superseded page that returns `302 → /login` still
+      **exists**. The redirect is the *no-credential* path; a page that trusts a forged cookie or
+      an unsigned header does not redirect at all. Superseded auth flows and legacy `*_V1`/`*_old`/
+      `*Test` pages must be **deleted**, not left redirecting — and a scan showing `302` must never
+      be recorded as "fixed." (A01/A07, CWE-1164; Censor: probe reports existence.)
 
 ## 10. Dependencies
 - [ ] Use a lockfile (`composer.lock`) and keep dependencies current.
@@ -295,6 +324,18 @@ gets hurt in a real audit.
       Extends §1's git-history rule to at-rest/served exposure. *Why:* deleting the file doesn't
       un-leak tokens already pulled — revoke server-side + reissue. (A02, CWE-522; Censor: flags
       exposure, rotation is a human action.)
+- [ ] **[DAY-1] Exposure response runs in this order — revoke, delete, rotate, then fix the cause.**
+      When a credential is found exposed, the *first* action is server-side **revocation** (revoke
+      the refresh token at the provider, roll the client secret at the identity provider), because
+      that is the only step that invalidates copies already taken. Deleting the file only stops
+      *new* copies and feels like remediation without being any. Then delete, then issue the
+      replacement somewhere safe, then fix the structural cause (§9 deny-by-default) so the next
+      file isn't exposed too. **Whether you believe anyone fetched it is irrelevant** — exposure is
+      disclosure; there is usually no access log granular enough to prove otherwise. *Why:* a real
+      audit found an identity-provider client secret and a live third-party API refresh token
+      downloadable; "delete the files" would have left both credentials valid in whatever hands
+      already held them. (A02/A07, CWE-522; Censor: flags the exposure — the revoke/rotate
+      sequence is a human action.)
 - [ ] **[DAY-1] TLS verification is never disabled.** No `verify=False` (requests/httpx), no
       `-SkipCertificateCheck`, no global cert-validation-off callback, no `curl -k`. A pinned CA
       bundle is fine; blanket-off is not. *Why:* turns every API call into a MITM opportunity;
@@ -308,6 +349,14 @@ gets hurt in a real audit.
       are the narrowest that work (read-only where possible); don't persist a refresh token if the
       flow can re-auth interactively. *Why:* a leaked token's blast radius = its scopes.
       (A01, CWE-272; Censor: judgment — scope intent isn't statically obvious.)
+- [ ] **[HARDENING] Integration credentials have a bounded lifetime and a known rotation cadence.**
+      For every third-party integration (vendor APIs, identity providers, mail platforms) record:
+      which credential, what scopes, where it's stored, when it expires, and who rotates it — in
+      your ops inventory alongside the cert table. Prefer the shortest TTL the integration
+      tolerates. *Why:* a leaked token's blast radius is its scopes **times its remaining
+      lifetime**; a long-lived refresh token with no expiry and no owner is a permanent credential
+      nobody is watching. An unrotatable credential you've forgotten about is indistinguishable
+      from a backdoor. (A01/A05, CWE-522/672; Censor: judgment — inventory is a human record.)
 - [ ] **[CONDITIONAL — only if an endpoint takes a URL/host from input] SSRF egress control.** A
       request built from user/DB-influenced input validates the destination against a host allowlist
       and refuses private/link-local/metadata ranges (`169.254.169.254`, `10/172.16/192.168`, `::1`).

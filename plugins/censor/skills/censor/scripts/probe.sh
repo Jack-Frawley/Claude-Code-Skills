@@ -63,6 +63,12 @@ EXPOSED_PATHS=(
   "/.pypirc"
   "/id_rsa"
   "/.aws/credentials"
+  # Conventional config/backup names a deny-by-default rule should be blocking (§9).
+  "/appsettings.json"
+  "/config.json"
+  "/.env.local"
+  "/.env.production"
+  "/dump.sql"
 )
 
 SECURITY_HEADERS=(
@@ -373,9 +379,13 @@ run_transport_checks() {
   echo
 }
 
-# probe_one_path <base> <path>  -> prints one line, records finding
+# probe_one_path <base> <path> [origin]  -> prints one line, records finding
+# origin: "curated" (default) or "operator". Operator-supplied paths are named
+# deliberately, so their mere existence is signal and 3xx is reported rather than
+# dropped; curated paths still ignore 3xx to avoid one noise finding per path on
+# auth-gated sites.
 probe_one_path() {
-  local base=$1 path=$2
+  local base=$1 path=$2 origin=${3:-curated}
   # Ensure exactly one slash join.
   local full="${base%/}${path}"
   local blob status ctype clen
@@ -410,10 +420,38 @@ probe_one_path() {
       : # ignored per spec
       ;;
     30*)
-      : # Redirect — almost always an auth gate or catch-all, meaning the path is
-        # NOT served as a static file, so it is not the exposure we hunt for (a real
-        # exposed file returns 200 with its own content-type). Ignored like 404 to
-        # avoid one noise finding per path on auth-gated sites (which most are).
+      # A redirect usually means an auth gate or catch-all rather than a served
+      # file, so curated paths stay quiet (one noise finding per path otherwise).
+      # But two things about a 3xx ARE real signal and are always reported:
+      local loc
+      loc=$(get_header "Location" "$blob" || true)
+      [ -z "$loc" ] && loc="(no Location header)"
+
+      # (1) HTTPS -> plaintext HTTP downgrade. Never noise, never acceptable:
+      # the browser follows it in the clear, exposing cookies and any credentials
+      # submitted at the destination. Reported for curated and operator paths alike.
+      case "$base" in
+        https://*)
+          case "$loc" in
+            http://*)
+              sev_line "HIGH" "${path} -> ${status} DOWNGRADES to plaintext HTTP (${loc})"
+              add_finding "redirect_downgrade" "HIGH" \
+                "${path} redirects from HTTPS to plaintext HTTP" \
+                "status ${status}; Location: ${loc}"
+              ;;
+          esac
+          ;;
+      esac
+
+      # (2) An operator-supplied path that redirects still EXISTS. A 302 to a login
+      # page is the no-credential path; a page that trusts a forged cookie does not
+      # redirect. Reporting existence keeps legacy/bypass pages visible.
+      if [ "$origin" = "operator" ]; then
+        sev_line "LOW " "${path} -> ${status} exists (redirects to ${loc})"
+        add_finding "path_exists_redirect" "LOW" \
+          "${path} exists and redirects (not proof of remediation)" \
+          "status ${status}; Location: ${loc}"
+      fi
       ;;
     ---)
       : # no response; not a finding
@@ -428,11 +466,14 @@ probe_one_path() {
 run_exposed_path_checks() {
   local base=$1 extra_file=$2
   echo "== Exposed paths =="
-  echo "  (200 = finding, 401/403 = blocked/good, 3xx/404 = ignored; bodies never stored)"
+  echo "  (200 = finding, 401/403 = blocked/good, 404 = ignored; bodies never stored)"
+  echo "  (3xx: HTTPS->HTTP downgrade always reported; operator paths report existence)"
   local before=${#FINDINGS[@]}
+  local tested=0
   local p
   for p in "${EXPOSED_PATHS[@]}"; do
     probe_one_path "$base" "$p"
+    tested=$((tested+1))
   done
 
   if [ -n "$extra_file" ]; then
@@ -448,7 +489,8 @@ run_exposed_path_checks() {
         /*) : ;;
         *) line="/$line" ;;
       esac
-      probe_one_path "$base" "$line"
+      probe_one_path "$base" "$line" "operator"
+      tested=$((tested+1))
     done < "$extra_file"
   fi
 
@@ -461,8 +503,15 @@ run_exposed_path_checks() {
     esac
   done
   if [ "$high" -eq 0 ]; then
-    sev_line "OK" "No exposed paths returned 200. Clean."
+    sev_line "OK" "None of the ${tested} tested paths returned 200."
   fi
+  # Coverage honesty: a curated list finds CONVENTIONAL exposures (.env, .git,
+  # phpinfo). It cannot find site-specific filenames someone invented. Saying
+  # "clean" unqualified invites reading this as an all-clear, which it is not.
+  echo "  NOTE: ${tested} paths tested (curated list${extra_file:+ + operator-supplied}). This list is"
+  echo "        NOT exhaustive — it cannot know site-specific filenames. A clean result means"
+  echo "        the TESTED paths were not exposed, NOT that nothing is exposed. Enumerate the"
+  echo "        web root from the filesystem/source for that assurance."
   echo
 }
 

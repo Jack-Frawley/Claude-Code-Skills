@@ -80,6 +80,15 @@ If the user did not already provide them, ask (this is the "opening prompt"):
 
 - **Target(s):** a **source path** (enables Stage 2 + 3) and/or a **live URL** (enables
   Stage 1). Both is ideal. Note what you actually have.
+- **Site-specific paths to probe** — **always ask this when you have a live URL.** The probe
+  ships a *curated* list that finds CONVENTIONAL exposures (`.env`, `.git/config`,
+  `phpinfo.php`); it cannot guess filenames someone invented. Ask: *"Any app-specific files
+  or paths worth probing — token/credential files, admin or legacy pages, integration
+  directories, anything a previous audit flagged?"* Feed them to `--paths`. If you have the
+  source or a prior advisory, mine it for candidates first and offer them.
+  _This exists because a real run found `phpinfo.php` on its own but missed a downloadable
+  credential file and a live API token — both had site-specific names, and both were only
+  re-found because an earlier audit had named them._
 - **Depth** (default **B** if they don't care):
   - **A — Deterministic only:** probe + semgrep + gitleaks → findings list. No LLM review.
   - **B — Deterministic + guided review (default):** A, then you personally review the

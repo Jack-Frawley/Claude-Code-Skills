@@ -427,3 +427,25 @@ rules:
           - pattern: rand(...)
           - pattern: mt_rand(...)
           - pattern: uniqid(...)
+
+  # ---------------------------------------------------------------------------
+  # §8 — Open redirect: redirect target taken from request data
+  # ---------------------------------------------------------------------------
+  - id: php-open-redirect
+    languages: [php]
+    severity: WARNING
+    message: >-
+      Location header built from request data is an open redirect. Validate the target against an
+      allowlist, or constrain it to a same-origin path — never pass an absolute URL through from
+      input. Lends your domain to phishing and can leak tokens via Referer (§8, CWE-601).
+    metadata:
+      baseline: "§8"
+      category: redirect
+      cwe: "CWE-601: URL Redirection to Untrusted Site (Open Redirect)"
+    patterns:
+      - pattern-inside: header(...)
+      - pattern-either:
+          - pattern: $_GET[...]
+          - pattern: $_POST[...]
+          - pattern: $_REQUEST[...]
+          - pattern: $_COOKIE[...]

@@ -30,8 +30,9 @@ this line," which is an acceptable cost for a review tool.
 | `php-ldap-injection` | §3 | ERROR | Request data in an LDAP filter (`ldap_search`/`list`/`read`) not wrapped in `ldap_escape` — LDAP injection. CWE-90. |
 | `php-weak-hash` | §15 Crypto | WARNING | `md5()`/`sha1()`/`hash("md5"/"sha1")` — weak for passwords/tokens (use `password_hash` ARGON2ID). CWE-916/328. |
 | `php-weak-random-token` | §15 Crypto | WARNING | `rand()`/`mt_rand()`/`uniqid()` — not a CSPRNG; for tokens/nonces/salts use `random_bytes`/`random_int`. CWE-330/338. |
+| `php-open-redirect` | §8 Transport | WARNING | `header()` built from `$_GET`/`$_POST`/`$_REQUEST`/`$_COOKIE` — open redirect / header injection; allowlist the target or use a same-origin path. CWE-601. |
 
-**Rule count: 18 PHP+JS** (17 PHP, 1 JS/TS) + 10 Python (see the Python section) = **28 total**. Fixtures:
+**Rule count: 19 PHP+JS** (18 PHP, 1 JS/TS) + 10 Python (see the Python section) = **29 total**. Fixtures:
 `tests/php_unserialize.php`, `tests/php_ldap.php`, `tests/php_crypto.php` cover the four crypto/injection additions.
 
 ## Test fixtures
