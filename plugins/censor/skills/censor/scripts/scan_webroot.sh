@@ -32,6 +32,21 @@ set -u
 MAX_DEPTH=12
 ROOT_IS_APPDIR=0
 FINDINGS=()
+
+# Directories to skip entirely: third-party dependencies and VCS internals are
+# not the app's own exposure surface, and a real run drowned in vendor/ test
+# files. (The .git DIRECTORY is still reported once, by classify_dir, as a
+# CRITICAL vcs-dir finding — we prune walking INTO it, not noticing it.)
+PRUNE_DIRS="vendor node_modules .git .svn .hg __pycache__ bower_components"
+
+# Emit the -path prune predicate for `find`. Keeps every walk consistent.
+prune_expr() {
+  local d first=1
+  for d in $PRUNE_DIRS; do
+    [ "$first" -eq 1 ] && first=0 || printf ' -o '
+    printf -- '-name %s' "$d"
+  done
+}
 SEV_COUNT_CRIT=0; SEV_COUNT_HIGH=0; SEV_COUNT_MED=0; SEV_COUNT_LOW=0
 
 # ---------------------------------------------------------------------------
@@ -101,6 +116,14 @@ classify() {
   case "$ext" in
     zip|7z|rar|tar|gz|tgz|bz2|xz|cab)
       echo "CRITICAL|archive|archive in a document root: if it is a site backup it contains all source AND every credential"; return ;;
+  esac
+
+  # --- OS/editor junk that a broad db/backup match would misfire on ---
+  # Thumbs.db is a Windows thumbnail cache, not a database dump; .DS_Store is
+  # mac junk. Catch them here (before the db-dump rule) as low-value metadata.
+  case "$lower" in
+    thumbs.db|ehthumbs.db|desktop.ini|.ds_store)
+      echo "LOW|metadata|OS/editor junk file: minor, but should not ship in a document root"; return ;;
   esac
 
   # --- Database dumps / schema ---
@@ -298,7 +321,7 @@ while IFS= read -r d; do
   sev_line "$sev" "$rel  ($n files) - $why"
   add_finding "$cat" "$sev" "$rel" "$why ($n files)"
   dir_hits=$((dir_hits+1))
-done < <(find "$ROOT" -maxdepth "$MAX_DEPTH" -type d 2>/dev/null)
+done < <(find "$ROOT" -maxdepth "$MAX_DEPTH" \( $(prune_expr) \) -prune -o -type d -print 2>/dev/null)
 [ "$dir_hits" -eq 0 ] && sev_line "OK" "none found"
 echo
 
@@ -317,7 +340,7 @@ while IFS= read -r f; do
   sev_line "$sev" "$rel  [$hs]  $cat - $why"
   add_finding "$cat" "$sev" "$rel" "$why (size $hs)"
   file_hits=$((file_hits+1))
-done < <(find "$ROOT" -maxdepth "$MAX_DEPTH" -type f 2>/dev/null)
+done < <(find "$ROOT" -maxdepth "$MAX_DEPTH" \( $(prune_expr) \) -prune -o -type f -print 2>/dev/null)
 [ "$file_hits" -eq 0 ] && sev_line "OK" "none found"
 echo
 
@@ -336,7 +359,7 @@ while IFS= read -r f; do
     add_finding "source-disclosure" "HIGH" "$rel" "PHP code inside a .html/.htm file served as static text"
     html_hits=$((html_hits+1))
   fi
-done < <(find "$ROOT" -maxdepth "$MAX_DEPTH" -type f \( -iname '*.html' -o -iname '*.htm' -o -iname '*.txt' -o -iname '*.inc' \) 2>/dev/null)
+done < <(find "$ROOT" -maxdepth "$MAX_DEPTH" \( $(prune_expr) \) -prune -o -type f \( -iname '*.html' -o -iname '*.htm' -o -iname '*.txt' -o -iname '*.inc' \) -print 2>/dev/null)
 [ "$html_hits" -eq 0 ] && sev_line "OK" "none found"
 echo
 
@@ -348,7 +371,7 @@ echo
 echo "== Document-root structure =="
 noncode=0
 for pat in '*.py' '*.ps1' '*.sql' '*.md' '*.yml' '*.yaml' '*.ini'; do
-  n=$(find "$ROOT" -maxdepth 2 -type f -iname "$pat" 2>/dev/null | wc -l | tr -d ' ')
+  n=$(find "$ROOT" -maxdepth 2 \( $(prune_expr) \) -prune -o -type f -iname "$pat" -print 2>/dev/null | wc -l | tr -d ' ')
   noncode=$((noncode + n))
 done
 haspublic=0
