@@ -41,7 +41,8 @@ run_native() {
 }
 
 run_docker() {
-  # Best-effort fallback for platforms without native semgrep (e.g. Windows).
+  # Best-effort fallback when native semgrep isn't on PATH (semgrep now installs
+  # natively on Windows via pip, so this is rarely needed — see check_deps.sh).
   # NOTE: Docker volume-mount paths can need adjustment on Windows/Git Bash; if
   # mounts fail there, run Censor from WSL or install semgrep inside WSL instead.
   echo "Running semgrep via Docker (semgrep/semgrep) — native semgrep not found."
@@ -68,6 +69,6 @@ elif command -v docker >/dev/null 2>&1; then
 else
   echo "scan_rules.sh: semgrep not installed (and no Docker fallback) — Stage 2 rule scan skipped." >&2
   echo "  install: pipx install semgrep | pip install semgrep | brew install semgrep" >&2
-  echo "  (Windows: semgrep has no native support — use WSL or Docker, or run without it.)" >&2
+  echo "  (Install: pip install semgrep — runs natively on Windows/Mac/Linux; or use Docker.)" >&2
   exit 3
 fi

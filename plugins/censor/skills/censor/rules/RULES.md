@@ -56,17 +56,17 @@ Every rule has at least one positive and one negative case. Fixtures are grouped
 | `tests/secrets.php` | `hardcoded-secret-define` (values are obvious fakes — `REDACTED_FAKE_SECRET`) |
 | `tests/innerhtml.js` | `innerhtml-string-build` |
 
-Run the built-in test runner from the `rules/` directory:
+Run the built-in test runner, pointing `--config` at the whole `rules/` directory (so every
+language file is loaded) and the `tests/` dir as the target:
 
 ```
-semgrep --test --config web-security-baseline.yml tests/
+semgrep --test --config . tests/        # from the rules/ directory
 ```
 
-> **`semgrep --test` run is PENDING.** semgrep was not installed in the authoring environment, so
-> the rules and fixtures were written by hand and have **not** been executed yet. Run the command
-> above before relying on the ruleset. If your semgrep version pairs tests by *filename* rather than
-> by rule-id annotation, rename each fixture to share the config basename (or split the yaml). The
-> annotation-by-id convention above matches current semgrep behavior.
+> **Status: all rules pass `semgrep --test`.** Validated on every push by CI (`semgrep --validate`
+> + `--test` on a Linux runner) **and** run locally on native Windows (semgrep CE ≥1.171, Fall-2025
+> Windows GA). Fixtures use the `// ruleid:` / `// ok:` (and `# ruleid:` for Dockerfile) annotation
+> convention; semgrep pairs them by rule-id, not filename.
 
 ### Patterns to double-check on that first run
 

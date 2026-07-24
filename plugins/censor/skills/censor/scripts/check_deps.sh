@@ -8,8 +8,10 @@
 #   - a human-readable report
 #   - one "AVAILABLE: <tools>" line
 #   - one "OS: <windows|mac|linux|unknown>" line
-#   - an "=== INSTALL COMMANDS ===" block: "<tool><TAB><command-or-GUIDANCE>" per missing tool
-#     (GUIDANCE token WINDOWS-SEMGREP = not native on Windows; use WSL/Docker)
+#   - an "=== INSTALL COMMANDS ===" block: "<tool><TAB><command>" per missing tool.
+#     Every command is directly runnable (or prefixed "MANUAL:" when it isn't).
+#     (semgrep now installs natively on Windows via pip — Fall-2025 GA; the old
+#     WINDOWS-SEMGREP "use WSL/Docker" token is retired.)
 set -u
 
 case "$(uname -s 2>/dev/null)" in
@@ -27,7 +29,7 @@ install_cmd() {
     gitleaks:windows) echo "winget install Gitleaks.Gitleaks" ;;
     gitleaks:mac)     echo "brew install gitleaks" ;;
     gitleaks:linux)   echo "brew install gitleaks   # or download: https://github.com/gitleaks/gitleaks/releases" ;;
-    semgrep:windows)  echo "WINDOWS-SEMGREP" ;;
+    semgrep:windows)  echo "pip install semgrep   # native Windows GA since CE Fall 2025 (needs Python 3.9+)" ;;
     semgrep:mac)      echo "brew install semgrep   # or: pipx install semgrep" ;;
     semgrep:linux)    echo "pipx install semgrep   # or: pip install semgrep" ;;
     curl:windows)     echo "MANUAL: bundled with Git for Windows (reinstall Git if missing)" ;;
@@ -51,13 +53,7 @@ check() {
   else
     printf '  [MISSING] %-9s %s\n' "$1" "$2"
     MISSING+=("$1")
-    if [ "$1" = "semgrep" ] && [ "$OS" = "windows" ]; then
-      printf '            NOTE: semgrep has no native Windows support. Use WSL\n'
-      printf '            (then pipx install semgrep), Docker (docker pull semgrep/semgrep),\n'
-      printf '            or run Censor WITHOUT it — probe + gitleaks + the LLM review still apply.\n'
-    else
-      printf '            install: %s\n' "$(install_cmd "$1")"
-    fi
+    printf '            install: %s\n' "$(install_cmd "$1")"
   fi
 }
 
@@ -66,7 +62,7 @@ check semgrep  "Stage 2 rule scan (baseline patterns)"
 check gitleaks "Stage 2 secret scan"
 check openssl  "Stage 1 TLS cert-expiry (optional)"
 
-have docker && echo "  [info]    docker    present — enables a semgrep fallback if native semgrep is unavailable"
+have docker && echo "  [info]    docker    present — usable as a semgrep fallback, though native (pip) semgrep is simpler"
 
 # PowerShell (optional Stage-2 leg, only used for .ps1/.psm1 targets)
 if have pwsh; then

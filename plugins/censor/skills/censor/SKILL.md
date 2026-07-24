@@ -58,13 +58,13 @@ missing tool (`winget` on Windows, `brew`/`pipx` on Mac/Linux).
 
 **Offer to install missing tools — with the user's confirmation, never silently:**
 - For each missing tool whose install command is a real command (e.g. `winget install
-  Gitleaks.Gitleaks`, `brew install semgrep`, `pipx install semgrep`), ASK: "`<tool>` isn't
+  Gitleaks.Gitleaks`, `pip install semgrep`, `brew install semgrep`), ASK: "`<tool>` isn't
   installed — want me to run `<command>`?" Run it only on an explicit yes, then re-run
   `check_deps.sh` to confirm it took.
-- **`WINDOWS-SEMGREP` token** = semgrep has no native Windows support — do NOT try to winget/pip
-  it. Tell the user their options: run Censor from **WSL** (`pipx install semgrep` inside WSL),
-  use **Docker** (`docker pull semgrep/semgrep` — `scan_rules.sh` uses it automatically if
-  present), or **proceed without semgrep**. Don't block on it.
+- **semgrep runs natively on Windows** (`pip install semgrep`, GA since CE Fall 2025 — needs
+  Python 3.9+). Offer it like any other install; there is no longer a WSL/Docker requirement.
+  (`scan_rules.sh` still auto-uses a Docker semgrep image if one is present and native semgrep
+  isn't — a fallback, not the primary path.)
 - **`MANUAL:` prefix** = no automatic install (e.g. curl/openssl ship with Git for Windows) —
   just surface the guidance.
 
