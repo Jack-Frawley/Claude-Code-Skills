@@ -5,18 +5,30 @@ estate of web apps and automation tooling. Each item was either a finding that h
 a pattern that held up under review. Most are nearly free when baked in from commit 1 and
 expensive to retrofit.
 
-**Scope — this is not web-only.** It covers the whole surface that handles a secret or serves a
-request: **PHP web apps · Python automation (API / cloud / SQL sync) · PowerShell tooling (user
-lifecycle, deployment) · Linux/Apache · anything storing a credential or token.** §1–§13a are the
-web request-path core; **§14–§17 are peers** (API/token lifecycle, cryptography, non-PHP code,
-server/infra & at-rest), not appendices. New items are tagged **[DAY-1]** (hold from commit 1) or
-**[HARDENING]**, with an OWASP/CWE ref and whether **Censor** can catch them statically (semgrep /
-PSScriptAnalyzer / probe) or they need human/LLM review.
+**Scope — this is not web-only, and not one-language.** It covers the whole surface that handles a
+secret or serves a request: **PHP/IIS & Linux/Apache web apps · Python automation (API / cloud /
+SQL sync) · PowerShell tooling (user lifecycle, deployment) · JavaScript/Node · C#/.NET · Java ·
+shell/batch glue · Office/VBA macros · the HTML/CSS/DOM they render · the XML/YAML/JSON they parse
+· the CI/CD that ships them · anything storing a credential or token.** §1–§13a are the request-path
+core (principle-level, language-agnostic); **§14–§20 are peers** (API/token lifecycle, cryptography,
+per-language application code, server/infra & at-rest, client-side & markup, data formats &
+serialization, CI/CD), not appendices. Read the core for the *why*; read the language/surface
+sections for how that principle manifests — and the footguns unique to each. New items are tagged
+**[DAY-1]** (hold from commit 1) or **[HARDENING]**, with an OWASP/CWE ref and whether **Censor**
+can catch them statically (semgrep — which covers PHP, Python, JS/TS, **Java, C#**, Go, Ruby and
+more / PSScriptAnalyzer / probe / web-root inventory) or they need human/LLM review.
+
+> **Language-agnostic first.** Injection (§2), output encoding (§3), access control (§6), auth
+> (§5), secrets (§1/§14), and crypto (§15) are the same *principle* in every language — only the
+> API changes (`?`-binding vs `PreparedStatement` vs parameterized `SqlCommand`). Don't re-learn
+> the principle per language; learn the *sink names and the one or two footguns each language adds*
+> (Java/​.NET deserialization gadget chains, Node prototype pollution, DOM `innerHTML`, XML XXE).
 
 > **Mapping note:** validated against OWASP Top 10 (2021 + 2025) and ASVS 4.0. The core is strong
 > on A01 (§6), A05 (§8/§8a/§9/§11), the 2025 "Exceptional Conditions" category (§12/§13), and Files
-> (§7). §14–§17 + the expansions below close the thin areas: A02 crypto, A08 integrity, A09
-> security logging, and the non-web / at-rest surfaces.
+> (§7). §14–§20 + the expansions below close the thin areas: A02 crypto, A08 integrity (incl.
+> deserialization + CI/CD supply chain), A09 security logging, XXE (A05/CWE-611), and the non-web /
+> at-rest / per-language surfaces.
 
 **Stack decision (per project):**
 - **Framework (Laravel / Symfony / etc.)** for anything substantial — you get CSRF, an ORM
@@ -392,10 +404,12 @@ gets hurt in a real audit.
       void the encryption. (A well-formed AES-GCM implementation with a per-message IV is the model.)
       (A02, CWE-326/327; Censor: static — `MODE_ECB`, literal key/IV bytes near cipher calls.)
 
-## 16. Non-PHP code security
+## 16. Application code — per-language
 
-Same principles as §1–§13, applied to Python automation and PowerShell tooling. Censor runs
-semgrep (Python) and PSScriptAnalyzer (PowerShell), so most of these are statically checkable.
+Same principles as §1–§13, applied per language. Each subsection is **the sinks and the one or
+two footguns that language adds** on top of the cross-cutting rules — not a re-statement of them.
+Censor runs semgrep (PHP, Python, JS/TS, Java, C#) and PSScriptAnalyzer (PowerShell), so most of
+these are statically checkable.
 
 **Python (API integrations, SQL sync, emailers):**
 - [ ] **[DAY-1]** No `shell=True` / `os.system` / `os.popen` with any non-constant argument;
@@ -427,6 +441,110 @@ semgrep (Python) and PSScriptAnalyzer (PowerShell), so most of these are statica
 - [ ] **[HARDENING]** Production/distributed scripts are Authenticode-signed and run under
       `AllSigned`/`RemoteSigned`; no `-ExecutionPolicy Bypass` baked into scheduled tasks or shortcuts.
       (A08, CWE-347; Censor: static — grep task defs/shortcuts for `-ep bypass`; signature presence.)
+
+**JavaScript / TypeScript (browser + Node.js):**
+> The DOM-sink and CSP side lives in §18 (client-side & markup); this covers the *language* and the
+> Node.js server runtime. TypeScript adds compile-time types, **not** runtime safety — every item
+> here applies to `.ts` unchanged.
+- [ ] **[DAY-1] No `eval` / `new Function` / string-form `setTimeout`/`setInterval` / `vm.runInContext`
+      on any non-constant input.** Same rule as PHP/Python code-injection, JS sinks. (A03, CWE-95;
+      Censor: static — `eval-or-dynamic-exec` covers JS.)
+- [ ] **[DAY-1] No shell string in `child_process`.** Use `execFile`/`spawn` with an **argv array**,
+      never `exec()`/`execSync()` with a command built from input; never `shell: true` with untrusted
+      args. (A03, CWE-78; Censor: static.)
+- [ ] **[DAY-1] Parameterized DB access.** Bound params / prepared statements / an ORM — never a
+      template-literal SQL string (`` `SELECT … ${x}` ``) or Mongo query object built from raw request
+      body (NoSQL injection via `$where`/operator objects). (A03, CWE-89/943; Censor: static.)
+- [ ] **[DAY-1] Guard prototype pollution.** Merging/cloning untrusted JSON (`Object.assign` deep,
+      `lodash.merge`, spread into a shared object) must reject `__proto__`/`constructor`/`prototype`
+      keys; parse with a schema (zod/ajv) rather than trusting shape. *Why:* one polluted prototype
+      silently changes objects app-wide — auth checks included. (A08, CWE-1321; Censor: static —
+      recursive-merge patterns + `__proto__` sinks.)
+- [ ] **[DAY-1] JWT verified, not just decoded.** `verify()` with a pinned algorithm — never
+      `decode()`-and-trust, never `algorithms:['none']`, never an HS/RS confusion where the public key
+      is accepted as an HMAC secret. (A02/A07, CWE-347; Censor: static — `jwt.decode` used as a gate,
+      `alg:none`.)
+- [ ] **[DAY-1] No secrets in client-shipped JS/TS.** API keys, tokens, connection strings baked into
+      a bundle are public the moment they ship; only truly-public keys (publishable/anon) belong
+      client-side. (A05, CWE-615; Censor: static + gitleaks over the built bundle.)
+- [ ] **[HARDENING] Dependency hygiene is the main event for Node.** A lockfile, `npm audit`/`osv`
+      in CI, and awareness that `postinstall` scripts run arbitrary code — pin and review new deps;
+      the transitive tree is your attack surface (§10/§20). (A06, CWE-1104; Censor: detect missing
+      lockfile; audit is the scan.)
+
+**C# / .NET (ASP.NET, services, desktop):**
+- [ ] **[DAY-1] Never `BinaryFormatter` / `NetDataContractSerializer` / `SoapFormatter` / `LosFormatter`
+      on untrusted data — they are RCE gadgets, full stop.** `BinaryFormatter` is removed/obsolete in
+      modern .NET for exactly this reason; use `System.Text.Json` or a contract serializer with known
+      types. (A08, CWE-502; Censor: static — the formatter type names.)
+- [ ] **[DAY-1] Parameterized SQL always.** `SqlCommand` with `@parameters` / EF Core LINQ or
+      `FromSqlInterpolated` — never `FromSqlRaw`/`ExecuteSqlRaw` with a concatenated string, never
+      string-built `CommandText`. (A03, CWE-89; Censor: static.)
+- [ ] **[DAY-1] Razor auto-encodes — never defeat it with untrusted data.** `@Html.Raw(...)`,
+      `Html.Raw`, `MvcHtmlString`, `[AllowHtml]` on a user field re-open XSS the engine had closed.
+      (A03, CWE-79; Censor: static — `Html.Raw(` with a non-constant arg.)
+- [ ] **[DAY-1] `[ValidateAntiForgeryToken]` on every state-changing action** (or the global
+      `AutoValidateAntiforgeryToken` filter); the token is emitted in the form. MVC/Razor give you
+      CSRF for free — don't opt out. (A01, CWE-352; Censor: static — POST actions lacking the attribute.)
+- [ ] **[DAY-1] No path built from request input into `File(...)`/`Path.Combine` without
+      canonicalize-and-confine.** `Path.GetFullPath` then verify the result is under the intended base;
+      reject `..`. (A01, CWE-22; Censor: static/judgment.)
+- [ ] **[DAY-1] XML parsers are XXE-safe** — see §19; `XmlReader` with `DtdProcessing = Prohibit`,
+      never a legacy `XmlDocument` with default DTD resolution on untrusted XML. (A05, CWE-611.)
+- [ ] **[HARDENING] Secrets from configuration providers, not `web.config`/`appsettings.json`
+      literals** — user-secrets in dev, a vault/env/Key Vault in prod; connection strings never hold a
+      literal password committed to source. (A05, CWE-798; Censor: static + gitleaks over config.)
+- [ ] **[HARDENING] Don't ship `<customErrors mode="Off">` / `DeveloperExceptionPage` to production**
+      — a yellow-screen stack trace is §12 in .NET clothes. (A05, CWE-209; Censor: static — config flag.)
+
+**Java (Spring / Jakarta EE):**
+- [ ] **[DAY-1] No native Java deserialization of untrusted bytes** (`ObjectInputStream.readObject`,
+      and the frameworks that wrap it) — this is the classic gadget-chain RCE. Use JSON/DTOs; if you
+      must, apply a strict deserialization allowlist (`ObjectInputFilter`). (A08, CWE-502; Censor:
+      static — `readObject`/`ObjectInputStream` on a request stream.)
+- [ ] **[DAY-1] Parameterized queries / bound named params** — `PreparedStatement`, JPA/Hibernate
+      *named* parameters, Spring Data method queries — never string-concatenated JPQL/HQL/SQL, and
+      beware Hibernate's own HQL-injection surface. (A03, CWE-89; Censor: static.)
+- [ ] **[DAY-1] Templates auto-escape; keep it on.** Thymeleaf `[[...]]`/`th:text` escape — `th:utext`
+      (unescaped) and JSP `<%= %>` without `<c:out>` re-open XSS. (A03, CWE-79; Censor: static —
+      `th:utext`, raw scriptlet output.)
+- [ ] **[DAY-1] No SpEL / OGNL / template expression built from input.** `@Value`/`parser.parseExpression`
+      on request data is server-side expression injection (the Struts/OGNL class of RCE); expression
+      strings are constants only. (A03, CWE-917; Censor: static — parser calls with non-constant args.)
+- [ ] **[DAY-1] XML/`DocumentBuilderFactory`/SAX/XXE hardened** — see §19; `setFeature(
+      "disallow-doctype-decl", true)` or disable external entities on every parser touching untrusted
+      XML (Java's parsers are XXE-vulnerable by default). (A05, CWE-611; Censor: static.)
+- [ ] **[DAY-1] Spring Security actually applied** — endpoints `authenticated()`/method-secured, not
+      a permissive `permitAll()` catch-all; CSRF left **on** for browser/session apps (Spring enables
+      it by default — a `.csrf().disable()` is a red flag unless the app is a stateless token API).
+      (A01/A07, CWE-862/352; Censor: static — `.disable()`/`permitAll`, judgment for intent.)
+- [ ] **[HARDENING] Dependency-vuln gate is not optional in the Java world** (Log4Shell lived here):
+      an SBOM + `dependency-check`/Snyk/`osv-scanner` in CI, deps pinned. (A06, CWE-1104/1035; §20.)
+
+**Shell / Bash / Batch (glue, deploy, cron, protocol shims):**
+- [ ] **[DAY-1] Quote every variable expansion (`"$var"`), and never `eval` request/argument input.**
+      Unquoted `$x` word-splits and glob-expands; `eval`/backticks on external data is command
+      injection. Prefer arrays for arg lists. (A03, CWE-78/88; Censor: static — `eval`, unquoted
+      expansions in risky position via shellcheck-class rules.)
+- [ ] **[DAY-1] `set -euo pipefail` in any script that guards a security decision or a deploy** — a
+      silently-failing step that continues is how a half-applied fix or a skipped check ships. (A08/
+      operability; Censor: static — presence.)
+- [ ] **[HARDENING] No secrets on the command line** (visible in `ps`/process table/history) — pass
+      via env or a file with restricted mode; no `curl -k`/`--insecure` (§14). (A02, CWE-214/319;
+      Censor: static.)
+
+**VBA / Office macros (macro-enabled workbooks, Access):**
+> Relevant wherever the environment runs `.xlsm` workbooks with the VBA object model enabled. A macro
+> is code with the user's full privileges, distributed as a document.
+- [ ] **[DAY-1] Macro-enabled documents are signed and from a trusted location; macros stay disabled
+      by default.** Don't lower the Trust Center to "enable all"; sign internal workbooks and mark the
+      share a Trusted Location rather than blanket-enabling. (A08, CWE-494; Censor: judgment — policy.)
+- [ ] **[DAY-1] No credentials or connection strings hardcoded in VBA** — a workbook is copied and
+      mailed freely; its `.bas`/`ThisWorkbook` code is readable. Pull from a protected config/DSN.
+      (A05, CWE-798; Censor: judgment.)
+- [ ] **[HARDENING] Macros that shell out / touch the filesystem / run SQL validate their inputs** the
+      same as any other code — `Shell`/`WScript.Shell`/ADODB with a concatenated string is injection.
+      (A03, CWE-78/89; Censor: judgment.)
 
 ## 17. Server / infra & at-rest config
 
@@ -462,3 +580,114 @@ server-config layer §9 doesn't reach.
       source's volume/host, aren't under any web root, and carry restricted ACLs + at-rest encryption.
       *Why:* a backup beside the app inherits its exposure, and one disk/ransomware event takes both.
       (A05, CWE-538; Censor: judgment.)
+
+## 18. Client-side & markup (HTML / CSS / DOM)
+
+§3 covers *server-side* output encoding; this covers what happens in the **browser** — the DOM
+sinks JS writes to, the markup attributes that carry security meaning, and the narrow but real
+attack surface of CSS. Encoding is **context-dependent**: the same value needs different escaping
+in HTML text, an attribute, a URL, a `<script>` block, and a CSS context — "I called
+`htmlspecialchars` once" is not a blanket defence.
+
+**HTML / DOM:**
+- [ ] **[DAY-1] Untrusted data reaches the DOM via a safe sink.** `textContent`/`innerText`/
+      `setAttribute` or a framework's auto-escaped binding — never `innerHTML`/`outerHTML`/
+      `insertAdjacentHTML`/`document.write` with a string built from input. If you must build HTML,
+      sanitize with DOMPurify. *Why:* the recurring fresh-audit XSS was `el.innerHTML = \`…${name}…\``.
+      (A03, CWE-79; Censor: static — `innerhtml-string-build` covers JS.)
+- [ ] **[DAY-1] React/Vue/Angular: don't defeat the auto-escaping.** `dangerouslySetInnerHTML`,
+      `v-html`, `[innerHTML]`, and `bypassSecurityTrust*` re-open XSS the framework had closed — each
+      needs a sanitized value and a comment justifying it. (A03, CWE-79; Censor: static.)
+- [ ] **[DAY-1] Encode for the *context*, and never build a `javascript:`/`data:` URL from input.**
+      `href`/`src`/`formaction`/`action` from user data is scheme-checked (allow `http(s)`/relative,
+      reject `javascript:`/`data:`/`vbscript:`); a value going into an inline `<script>` needs JS-string
+      escaping (`JSON.stringify` / `JSON_HEX_*`), not HTML escaping. (A03, CWE-79/83; Censor:
+      static/judgment.)
+- [ ] **[DAY-1] `target="_blank"` carries `rel="noopener noreferrer"`.** Without it the opened page
+      can rewrite `window.opener.location` (reverse-tabnabbing) and reads the referrer. (A05, CWE-1022;
+      Censor: static — `_blank` without `noopener`.)
+- [ ] **[HARDENING] `<iframe>` embedding untrusted content is `sandbox`ed** (and `allow`-scoped),
+      minimal privileges only. Pairs with §8's `X-Frame-Options`/`frame-ancestors` for the *other*
+      direction (being framed). (A05, CWE-1021; Censor: static.)
+- [ ] **[HARDENING] Sensitive fields don't leak via markup defaults.** `autocomplete="off"`/`"new-password"`
+      on credential/OTP fields where appropriate, no secret values in `hidden` inputs treated as
+      trusted on return (§6 — the server re-checks; a hidden field is not a control), no sensitive data
+      in `localStorage` (readable by any XSS — prefer an httponly cookie). (A01/A05, CWE-522/525;
+      Censor: judgment.)
+
+**CSS:**
+- [ ] **[DAY-1] Never inject untrusted data into a `<style>` block or `style=` attribute.** A
+      user-controlled value in a CSS context can exfiltrate data via attribute-selector +
+      `background:url()` requests (e.g. leaking a CSRF token or input value character-by-character),
+      and legacy `expression()`/`-moz-binding`/`behavior:` were script-execution vectors. Keep dynamic
+      styling in JS via the CSSOM (`el.style.x`), which §8a's CSP exemption already blesses, not in
+      injected markup. (A03, CWE-79/74; Censor: static/judgment — untrusted value in a style sink.)
+- [ ] **[HARDENING] Guard against UI-redress (clickjacking) at the CSS layer too.** A transparent
+      overlay / `opacity:0` iframe over a real control is the attack `frame-ancestors` (§8) blocks from
+      outside; internally, don't build "invisible clickable" patterns that train users to click through
+      overlays. (A05, CWE-1021; Censor: judgment.)
+- [ ] **[HARDENING] Third-party CSS/fonts are pinned + SRI'd or self-hosted.** A remote stylesheet can
+      restyle your login page and its `url()`s phone home; §10's SRI rule applies to `<link rel=stylesheet>`
+      and web-font origins, not just scripts. (A08, CWE-353; Censor: static — external `<link>` without
+      `integrity`.)
+
+## 19. Data formats & serialization (XML / YAML / JSON)
+
+The parser is an attack surface, not just a convenience. Deserialization (§8/§16 per language) and
+XML external entities are OWASP-classic RCE/SSRF/file-read vectors that cut across every language
+that parses these formats.
+
+- [ ] **[DAY-1] XML parsing is XXE-safe wherever XML crosses a trust boundary.** Disable DTDs /
+      external entities / external DTD loading on **every** parser touching untrusted XML — this spans
+      the whole estate: Java (`DocumentBuilderFactory.setFeature("…disallow-doctype-decl", true)`),
+      .NET (`XmlReaderSettings.DtdProcessing = Prohibit`), Python (`defusedxml`, never stock
+      `xml.etree`/`lxml` with entity resolution on), PHP (`libxml_disable_entity_loader`/no
+      `LIBXML_NOENT`). *Why:* one `<!ENTITY … SYSTEM "file:///…">` reads local files, hits internal
+      URLs (SSRF), or billion-laughs-DoSes — and most parsers are vulnerable **by default**. (A05,
+      CWE-611/776; Censor: static — parser construction without the hardening flag.)
+- [ ] **[DAY-1] YAML loads via the safe loader only.** `yaml.safe_load` (Python), SnakeYAML with a
+      `SafeConstructor`/typed constructor (Java), a safe schema elsewhere — never a loader that
+      instantiates arbitrary types from tags (`!!python/object`, arbitrary Java types). *Why:* unsafe
+      YAML deserialization is code execution, same class as pickle/`BinaryFormatter`. (A08, CWE-502;
+      Censor: static — `yaml.load` without `SafeLoader`, unsafe SnakeYAML ctor.)
+- [ ] **[DAY-1] JSON is parsed, never evaluated, and validated against a schema.** Standard parsers
+      only (never `eval` of a JSON string); validate shape/types (zod/ajv/Pydantic/DataAnnotations)
+      before trusting — a well-formed JSON body is not a *valid* one, and deep-merging it risks
+      prototype pollution (§16 JS). Type-binding deserializers that resolve `$type`/`_class` from the
+      payload (Jackson polymorphic default-typing, Json.NET `TypeNameHandling.All`) are a deserialization
+      RCE and must be off. (A08, CWE-502/20; Censor: static — `TypeNameHandling.All`, Jackson default
+      typing, JSON into a recursive merge.)
+- [ ] **[HARDENING] Archive/file extraction is path- and size-bounded.** Unzipping untrusted archives
+      canonicalizes each entry under the target dir (Zip-Slip: an entry named `../../x` escapes) and
+      caps total size/entry count (zip-bomb). (A08, CWE-22/409; Censor: static/judgment.)
+
+## 20. CI/CD & build pipeline
+
+The pipeline that builds and ships the code is itself production — it holds deploy credentials and
+can push arbitrary artifacts. This is OWASP A08 (integrity) at the supply-chain layer. Applies to
+the GitHub Actions in use today and to any Docker packaging.
+
+- [ ] **[DAY-1] No plaintext secrets in workflow files or build logs.** CI secrets come from the
+      platform secret store (GitHub Actions secrets / a vault), referenced as `${{ secrets.X }}`, never
+      a literal in the YAML or an `echo`'d value; mask anything sensitive. (A05, CWE-798; Censor:
+      gitleaks over `.github/`, static.)
+- [ ] **[DAY-1] Third-party Actions are pinned to a full commit SHA, not a moving tag.** `uses:
+      owner/action@<40-char-sha>`; a `@v3`/`@main` tag can be repointed at malicious code under you.
+      Pin, and review updates. (A08, CWE-1357/494; Censor: static — `uses:` without a SHA pin.)
+- [ ] **[DAY-1] Untrusted PR input never reaches a shell step, and `pull_request_target` is handled
+      with care.** Interpolating `${{ github.event.* }}` (PR title/body/branch) straight into a `run:`
+      block is script injection into the runner; `pull_request_target` runs with write-scoped secrets
+      against attacker-controlled code — don't check out and execute the PR head under it. (A03,
+      CWE-94; Censor: static — `github.event` in `run:`, `pull_request_target` + checkout.)
+- [ ] **[DAY-1] Least-privilege `GITHUB_TOKEN` / pipeline identity.** Set `permissions:` to the
+      minimum (default read-only; grant `contents:write` etc. only on the job that needs it); deploy
+      credentials are scoped and short-lived, not an org-admin PAT. (A01, CWE-272; Censor: static —
+      missing/over-broad `permissions:`.)
+- [ ] **[HARDENING] Dependency + artifact integrity is enforced in the pipeline.** The dep-vuln gate
+      (§10) runs here (`npm/pip/dependency-check` audit), installs use the lockfile
+      (`npm ci`, `pip install -r … --require-hashes`), and published artifacts are ideally signed. (A06/
+      A08, CWE-1104; Censor: static — audit step present, lockfile install.)
+- [ ] **[HARDENING] Docker images are minimal, pinned, non-root, and secret-free.** A pinned base
+      image (digest), no secret baked into a layer (they persist in history even if later deleted — same
+      rule as §1), a non-root `USER`, and `.dockerignore` excluding `.env`/`.git`. (A05/A06, CWE-798/250;
+      Censor: static — Dockerfile `USER root`, secrets in `ENV`/`ARG`, unpinned `FROM`.)
