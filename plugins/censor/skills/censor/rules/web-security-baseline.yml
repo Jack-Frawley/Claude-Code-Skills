@@ -464,11 +464,13 @@ rules:
       category: info-disclosure
       cwe: "CWE-489: Active Debug Code"
     patterns:
+      # Only the const/define forms — a bare `$DEBUG = true` metavariable matches
+      # EVERY `$anything = true` (a real run flagged $response['ok']=true), so the
+      # variable-assignment form is deliberately excluded.
       - pattern-either:
           - pattern: const DEBUG = true;
           - pattern: define('DEBUG', true);
           - pattern: define("DEBUG", true);
-          - pattern: $DEBUG = true;
 
   # ---------------------------------------------------------------------------
   # §16 (JS) — Command injection: concatenation into child_process.exec
