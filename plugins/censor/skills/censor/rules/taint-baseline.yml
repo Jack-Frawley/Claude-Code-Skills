@@ -1,0 +1,106 @@
+# Censor — PHP taint-tracking rules (semgrep CE `mode: taint`).
+# These catch request data that FLOWS to a dangerous sink across variable
+# assignments — the indirect case the single-pattern rules miss ($x = $_GET[..];
+# … exec($x)). Sanitizers keep them quiet on correctly-handled input.
+rules:
+  # ---------------------------------------------------------------------------
+  # §16 — Request data reaching a shell/command sink (PHP command injection).
+  # No single-pattern PHP rule covers exec/system/shell_exec — this is new.
+  # ---------------------------------------------------------------------------
+  - id: php-taint-command-exec
+    languages: [php]
+    mode: taint
+    severity: ERROR
+    message: >-
+      Request data flows into a shell command (exec/system/shell_exec/passthru/popen/proc_open) —
+      command injection. escapeshellarg() each argument (and prefer a fixed program with an arg
+      list), or int-cast where the value is numeric (§16, CWE-78).
+    metadata:
+      baseline: "§16"
+      category: command-injection
+      cwe: "CWE-78: OS Command Injection"
+    pattern-sources:
+      - pattern: $_GET[...]
+      - pattern: $_POST[...]
+      - pattern: $_REQUEST[...]
+      - pattern: $_COOKIE[...]
+      - pattern: $_SERVER[...]
+    pattern-sanitizers:
+      - pattern: escapeshellarg(...)
+      - pattern: escapeshellcmd(...)
+      - pattern: intval(...)
+      - pattern: (int) $X
+      - pattern: (integer) $X
+    pattern-sinks:
+      - pattern: exec(...)
+      - pattern: system(...)
+      - pattern: shell_exec(...)
+      - pattern: passthru(...)
+      - pattern: popen(...)
+      - pattern: proc_open(...)
+      - pattern: "`...`"
+
+  # ---------------------------------------------------------------------------
+  # §7/§16 — Request data reaching an include/file sink (LFI / path traversal).
+  # ---------------------------------------------------------------------------
+  - id: php-taint-file-include
+    languages: [php]
+    mode: taint
+    severity: ERROR
+    message: >-
+      Request data flows into a file include/read (include/require/fopen/file_get_contents/
+      readfile) — local file inclusion / path traversal. Resolve against an allowlist, or
+      basename() + confine under a fixed base directory and reject '..' (§7/§16, CWE-22/98).
+    metadata:
+      baseline: "§7"
+      category: path-traversal
+      cwe: "CWE-22: Path Traversal"
+    pattern-sources:
+      - pattern: $_GET[...]
+      - pattern: $_POST[...]
+      - pattern: $_REQUEST[...]
+      - pattern: $_COOKIE[...]
+    pattern-sanitizers:
+      - pattern: basename(...)
+    pattern-sinks:
+      - pattern: include $X;
+      - pattern: include_once $X;
+      - pattern: require $X;
+      - pattern: require_once $X;
+      - pattern: fopen(...)
+      - pattern: file_get_contents(...)
+      - pattern: readfile(...)
+
+  # ---------------------------------------------------------------------------
+  # §2 — Request data flowing to a SQL query STRING across assignments.
+  # focus-metavariable pins the query-string position, so a parameterized call
+  # that passes the value in the params array is NOT flagged.
+  # ---------------------------------------------------------------------------
+  - id: php-taint-sql-query
+    languages: [php]
+    mode: taint
+    severity: ERROR
+    message: >-
+      Request data flows into a SQL query string (indirect: assigned to a variable, then
+      concatenated/interpolated into the query). Use a prepared statement with bound parameters;
+      the value belongs in the params array, never in the query text (§2, CWE-89).
+    metadata:
+      baseline: "§2"
+      category: injection
+      cwe: "CWE-89: SQL Injection"
+    pattern-sources:
+      - pattern: $_GET[...]
+      - pattern: $_POST[...]
+      - pattern: $_REQUEST[...]
+      - pattern: $_COOKIE[...]
+    pattern-sanitizers:
+      - pattern: intval(...)
+      - pattern: (int) $X
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: sqlsrv_query($CONN, $Q, ...)
+              - pattern: mysqli_query($CONN, $Q)
+              - pattern: $DB->query($Q)
+              - pattern: $DB->exec($Q)
+          - focus-metavariable: $Q

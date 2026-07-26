@@ -33,7 +33,7 @@ this line," which is an acceptable cost for a review tool.
 | `php-open-redirect` | §8 Transport | WARNING | `header()` built from `$_GET`/`$_POST`/`$_REQUEST`/`$_COOKIE` — open redirect / header injection; allowlist the target or use a same-origin path. CWE-601. |
 | `php-debug-constant-true` | §12 Info-disclosure | WARNING | `const DEBUG = true` / `define('DEBUG', true)` — app debug flag left on; typically switches error handlers to raw exception text (DSN, server, SQL errors). CWE-489/209. |
 
-**Rule count: 23 PHP+JS** (19 PHP, 4 JS/TS) + 11 Python + 5 Java + 6 C# + 3 Dockerfile + 3 GitHub-Actions = **50 total**
+**Rule count: 23 PHP+JS** (19 PHP, 4 JS/TS) + 11 Python + 5 Java + 6 C# + 3 Dockerfile + 3 GitHub-Actions + 3 PHP-taint = **53 total**
 (see the per-language sections below). Fixtures for the crypto/injection additions:
 `tests/php_unserialize.php`, `tests/php_ldap.php`, `tests/php_crypto.php`.
 
@@ -305,6 +305,19 @@ YAML rules (self-scoping by content — the patterns only occur in workflow file
 | `actions-unpinned-uses` | §20 | WARNING | `uses: owner/action@<tag>` not pinned to a 40-char commit SHA — mutable-ref supply-chain risk. CWE-1357. |
 
 **GitHub Actions rule count: 3.**
+
+## PHP taint-tracking catalog (`taint-baseline.yml`)
+
+semgrep CE `mode: taint` — tracks request data **flowing** to a sink across variable assignments
+(the indirect case single-pattern rules miss), with sanitizers to stay quiet on handled input.
+
+| Rule id | Baseline § | Severity | Enforces / detects |
+|---|---|---|---|
+| `php-taint-command-exec` | §16 | ERROR | Request data reaching exec/system/shell_exec/passthru/popen/proc_open/backticks — command injection. Sanitizers: escapeshellarg/escapeshellcmd/intval/(int). No single-pattern PHP rule covered this. CWE-78. |
+| `php-taint-file-include` | §7/§16 | ERROR | Request data reaching include/require/fopen/file_get_contents/readfile — LFI / path traversal. Sanitizer: basename. CWE-22/98. |
+| `php-taint-sql-query` | §2 | ERROR | Request data flowing (indirectly) into a SQL query STRING. `focus-metavariable` pins the query position, so a parameterized call passing the value in the params array is NOT flagged. CWE-89. |
+
+**PHP taint rule count: 3.**
 
 ## Language coverage vs the baseline
 
