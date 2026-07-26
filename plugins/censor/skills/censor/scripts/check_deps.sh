@@ -32,6 +32,9 @@ install_cmd() {
     semgrep:windows)  echo "pip install semgrep   # native Windows GA since CE Fall 2025 (needs Python 3.9+)" ;;
     semgrep:mac)      echo "brew install semgrep   # or: pipx install semgrep" ;;
     semgrep:linux)    echo "pipx install semgrep   # or: pip install semgrep" ;;
+    shellcheck:windows) echo "winget install koalaman.shellcheck" ;;
+    shellcheck:mac)     echo "brew install shellcheck" ;;
+    shellcheck:linux)   echo "sudo apt-get install -y shellcheck   # or: sudo dnf install -y ShellCheck" ;;
     curl:windows)     echo "MANUAL: bundled with Git for Windows (reinstall Git if missing)" ;;
     curl:mac)         echo "brew install curl" ;;
     curl:linux)       echo "sudo apt-get install -y curl   # or: sudo dnf install -y curl" ;;
@@ -63,6 +66,14 @@ check gitleaks "Stage 2 secret scan"
 check openssl  "Stage 1 TLS cert-expiry (optional)"
 
 have docker && echo "  [info]    docker    present — usable as a semgrep fallback, though native (pip) semgrep is simpler"
+
+# shellcheck (optional Stage-2 leg, only used for shell scripts)
+if have shellcheck; then
+  printf '  [ok]      %-9s %s\n' "shellcheck" "Stage 2 shell scan (shell scripts present)"
+else
+  printf '  [info]    %-9s %s\n' "shellcheck" "not present — shell scan skipped (only needed for .sh targets)"
+  printf '            install: %s\n' "$(install_cmd shellcheck)"
+fi
 
 # PowerShell (optional Stage-2 leg, only used for .ps1/.psm1 targets)
 if have pwsh; then

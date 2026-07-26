@@ -1,0 +1,19 @@
+on:
+  # ruleid: actions-pull-request-target
+  pull_request_target:
+    types: [opened]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # ruleid: actions-unpinned-uses
+      - uses: actions/checkout@v4
+      # ok: actions-unpinned-uses
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: bad
+        # ruleid: actions-untrusted-input-in-run
+        run: echo "title is ${{ github.event.pull_request.title }}"
+      - name: ok
+        # ok: actions-untrusted-input-in-run
+        run: echo "sha is ${{ github.sha }}"

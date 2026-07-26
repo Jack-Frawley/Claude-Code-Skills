@@ -1,0 +1,58 @@
+# Censor — GitHub Actions workflow security (SECURITY_BASELINE.md §20)
+# YAML rules, scoped by content: the patterns (uses:, pull_request_target,
+# github.event) realistically only occur in workflow files, so they self-select
+# without a paths filter (which would break `semgrep --test` fixture pairing).
+rules:
+  # ---------------------------------------------------------------------------
+  # §20 — Untrusted PR input interpolated into a shell step (runner injection)
+  # ---------------------------------------------------------------------------
+  - id: actions-untrusted-input-in-run
+    languages: [yaml]
+    severity: ERROR
+    message: >-
+      An attacker-controlled ${{ github.event.* }} field (PR title/body/branch, issue text,
+      review body) interpolated into a workflow expression is script injection into the runner
+      when it reaches a run: step. Pass it through an env: var and reference "$VAR" in run:, never
+      inline the expression (§20, CWE-94).
+    metadata:
+      baseline: "§20"
+      category: ci-injection
+      cwe: "CWE-94: Code Injection"
+    patterns:
+      - pattern-regex: '\$\{\{\s*github\.(event\.(issue|pull_request|comment|review|head_commit|discussion)|head_ref)\b[^}]*\}\}'
+
+  # ---------------------------------------------------------------------------
+  # §20 — pull_request_target: runs with write secrets against forked code
+  # ---------------------------------------------------------------------------
+  - id: actions-pull-request-target
+    languages: [yaml]
+    severity: WARNING
+    message: >-
+      pull_request_target runs with the base repo's write-scoped secrets while the PR is
+      attacker-controlled. Never check out and build/execute the PR head under it; if you must,
+      do untrusted work in a separate unprivileged pull_request job (§20, CWE-269).
+    metadata:
+      baseline: "§20"
+      category: ci-privilege
+      cwe: "CWE-269: Improper Privilege Management"
+    patterns:
+      - pattern-regex: '(^|\s)pull_request_target\s*:'
+
+  # ---------------------------------------------------------------------------
+  # §20 — Third-party action pinned to a moving tag, not a commit SHA
+  # ---------------------------------------------------------------------------
+  - id: actions-unpinned-uses
+    languages: [yaml]
+    severity: WARNING
+    message: >-
+      Action pinned to a mutable tag/branch (@v3, @main). The tag can be repointed at malicious
+      code under you. Pin to a full 40-char commit SHA (uses: owner/action@<sha>) and let
+      Dependabot bump it (§20, CWE-1357).
+    metadata:
+      baseline: "§20"
+      category: supply-chain
+      cwe: "CWE-1357: Reliance on Insufficiently Trustworthy Component"
+    patterns:
+      # uses: owner/repo@ref where ref is NOT a 40-hex SHA. Local (./...) and
+      # docker:// refs are excluded by requiring an owner/repo shape.
+      - pattern-regex: 'uses:\s*[A-Za-z0-9._-]+/[A-Za-z0-9._/-]+@(?![0-9a-fA-F]{40}\b)\S+'

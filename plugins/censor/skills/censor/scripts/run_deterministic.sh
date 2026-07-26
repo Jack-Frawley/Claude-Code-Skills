@@ -91,6 +91,13 @@ if [ -n "$SRC" ]; then
     pwsh -NoProfile -File "$(winpath "$SCRIPT_DIR/scan_ps.ps1")" -Path "$(winpath "$SRC")" -Json "$(winpath "$OUT/ps.json")" || true
     echo
   fi
+  # Shell scan only when the source contains shell scripts and shellcheck exists.
+  if command -v shellcheck >/dev/null 2>&1 \
+     && find "$SRC" -type f \( -name '*.sh' -o -name '*.bash' \) -print -quit 2>/dev/null | grep -q .; then
+    echo "--- Stage 2: Shell (shellcheck) ---"
+    bash "$SCRIPT_DIR/scan_sh.sh" "$SRC" --json "$OUT/sh.json" || true
+    echo
+  fi
 fi
 
 echo "================================================================"

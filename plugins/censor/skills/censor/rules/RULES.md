@@ -33,7 +33,7 @@ this line," which is an acceptable cost for a review tool.
 | `php-open-redirect` | §8 Transport | WARNING | `header()` built from `$_GET`/`$_POST`/`$_REQUEST`/`$_COOKIE` — open redirect / header injection; allowlist the target or use a same-origin path. CWE-601. |
 | `php-debug-constant-true` | §12 Info-disclosure | WARNING | `const DEBUG = true` / `define('DEBUG', true)` — app debug flag left on; typically switches error handlers to raw exception text (DSN, server, SQL errors). CWE-489/209. |
 
-**Rule count: 23 PHP+JS** (19 PHP, 4 JS/TS) + 11 Python + 5 Java + 6 C# + 3 Dockerfile = **48 total**
+**Rule count: 23 PHP+JS** (19 PHP, 4 JS/TS) + 11 Python + 5 Java + 6 C# + 3 Dockerfile + 3 GitHub-Actions = **50 total**
 (see the per-language sections below). Fixtures for the crypto/injection additions:
 `tests/php_unserialize.php`, `tests/php_ldap.php`, `tests/php_crypto.php`.
 
@@ -294,10 +294,22 @@ semgrep --test --config python-baseline.yml tests/
 
 **Dockerfile rule count: 3.**
 
+## GitHub Actions rule catalog (`actions-baseline.yml`)
+
+YAML rules (self-scoping by content — the patterns only occur in workflow files).
+
+| Rule id | Baseline § | Severity | Enforces / detects |
+|---|---|---|---|
+| `actions-untrusted-input-in-run` | §20 | ERROR | `${{ github.event.* }}` / `github.head_ref` (attacker-controlled PR/issue text) interpolated into a workflow expression — runner script injection. CWE-94. |
+| `actions-pull-request-target` | §20 | WARNING | `pull_request_target:` trigger — runs with write-scoped secrets against forked code. CWE-269. |
+| `actions-unpinned-uses` | §20 | WARNING | `uses: owner/action@<tag>` not pinned to a 40-char commit SHA — mutable-ref supply-chain risk. CWE-1357. |
+
+**GitHub Actions rule count: 3.**
+
 ## Language coverage vs the baseline
 
-Statically ruled today: **PHP, Python, JavaScript/TypeScript, Java, C#, Dockerfile** (+ PowerShell
-via PSScriptAnalyzer, + probe/web-root stages). Baseline surfaces still **LLM-review-only** (no
-rule): Shell/Bash (shellcheck-class — not yet wired), VBA/Office macros, GitHub Actions YAML
-(`pull_request_target` / unpinned `uses:` / `${{ github.event }}`-in-`run:` — fiddly in semgrep
-YAML, deferred), and the reasoning-bound classes (CSRF absence, IDOR, eligibility) unchanged.
+Statically ruled today: **PHP, Python, JavaScript/TypeScript, Java, C#, Dockerfile, GitHub-Actions
+YAML** (semgrep) **+ PowerShell** (PSScriptAnalyzer) **+ Shell/Bash** (shellcheck, `scan_sh.sh`),
+plus the probe / web-root / secret (gitleaks) stages. Baseline surfaces still **LLM-review-only**:
+VBA/Office macros, and the reasoning-bound classes (CSRF absence, IDOR, missing-eligibility) that no
+pattern can decide.
