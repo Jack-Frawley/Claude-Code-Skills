@@ -113,9 +113,13 @@ writes JSON artifacts to an out-dir:
 ```
 bash ${CLAUDE_SKILL_DIR}/scripts/run_deterministic.sh --source <path> --url <base-url> --out-dir <dir>
 ```
-(Give `--source`, `--url`, or both.) It runs the probe, semgrep, gitleaks, and — when the
-source contains `.ps1`/`.psm1` and `pwsh` is present — the PowerShell scan, producing
-`probe.json`, `rules.json`, `secrets.json`, `ps.json`. Then read those artifacts.
+(Give `--source`, `--url`, and/or `--webroot`.) It runs the probe, web-root inventory, semgrep,
+gitleaks, and — when the source contains `.ps1`/`.psm1` and `pwsh` is present — the PowerShell scan,
+producing `probe.json`, `rules.json`, `secrets.json`, `ps.json`, `webroot.json`. Then read those
+artifacts. Optional flags: **`--sarif`** also writes `semgrep.sarif`/`gitleaks.sarif` (GitHub
+code-scanning / VS Code), and **`--fail-on error|high`** turns it into a CI gate (non-zero exit on
+findings at/above that level). See `docs/CI-INTEGRATION.md` for a ready-to-use GitHub Actions
+workflow — running Censor per-push is how the baseline gets enforced rather than audited by hand.
 
 Or run the stages individually:
 
