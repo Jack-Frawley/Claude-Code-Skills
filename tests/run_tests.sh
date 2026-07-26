@@ -34,6 +34,22 @@ else
     bad "semgrep rule tests (see /tmp/censor_semgrep_test.out)"
     tail -n 20 /tmp/censor_semgrep_test.out 2>/dev/null | sed 's/^/      /'
   fi
+
+  # 1b) FALSE-POSITIVE corpus: clean, realistic code that must produce ZERO
+  # findings. Fixtures prove a rule CAN fire; this proves it does not fire on the
+  # common safe idioms that sit next to its trigger. (Born from a real over-match:
+  # `$DEBUG = true` once matched every `$x = true`. Fixtures missed it; a corpus
+  # scan of real code caught it.)
+  if [ -d "$RULES/corpus" ]; then
+    fp=$(semgrep --quiet --config "$RULES" --exclude tests --exclude corpus "$RULES/corpus" --json 2>/dev/null \
+         | python -c "import json,sys; print(len(json.load(sys.stdin).get('results',[])))" 2>/dev/null)
+    if [ "$fp" = "0" ]; then
+      ok "FP-corpus clean (0 findings on known-good code)"
+    else
+      bad "FP-corpus: ${fp:-?} finding(s) on clean code — likely an over-matching rule"
+      semgrep --quiet --config "$RULES" --exclude tests --exclude corpus "$RULES/corpus" 2>/dev/null | sed 's/^/      /' | head -n 20
+    fi
+  fi
 fi
 
 # 2) gitleaks detects a RUNTIME-GENERATED fixture (nothing secret-shaped is committed)
