@@ -33,7 +33,7 @@ this line," which is an acceptable cost for a review tool.
 | `php-open-redirect` | §8 Transport | WARNING | `header()` built from `$_GET`/`$_POST`/`$_REQUEST`/`$_COOKIE` — open redirect / header injection; allowlist the target or use a same-origin path. CWE-601. |
 | `php-debug-constant-true` | §12 Info-disclosure | WARNING | `const DEBUG = true` / `define('DEBUG', true)` — app debug flag left on; typically switches error handlers to raw exception text (DSN, server, SQL errors). CWE-489/209. |
 
-**Rule count: 23 PHP+JS** (19 PHP, 4 JS/TS) + 11 Python + 5 Java + 6 C# + 3 Dockerfile + 3 GitHub-Actions + 3 PHP-taint = **54 total**
+**Rule count: 23 PHP+JS** (19 PHP, 4 JS/TS) + 11 Python + 5 Java + 6 C# + 3 Dockerfile + 3 GitHub-Actions + 6 taint (PHP/Py/JS) = **57 total**
 (see the per-language sections below). Fixtures for the crypto/injection additions:
 `tests/php_unserialize.php`, `tests/php_ldap.php`, `tests/php_crypto.php`.
 
@@ -306,7 +306,7 @@ YAML rules (self-scoping by content — the patterns only occur in workflow file
 
 **GitHub Actions rule count: 3.**
 
-## PHP taint-tracking catalog (`taint-baseline.yml`)
+## Taint-tracking catalog (`taint-baseline.yml`) — PHP · Python · JS
 
 semgrep CE `mode: taint` — tracks request data **flowing** to a sink across variable assignments
 (the indirect case single-pattern rules miss), with sanitizers to stay quiet on handled input.
@@ -317,7 +317,11 @@ semgrep CE `mode: taint` — tracks request data **flowing** to a sink across va
 | `php-taint-file-include` | §7/§16 | ERROR | Request data reaching include/require/fopen/file_get_contents/readfile — LFI / path traversal. Sanitizer: basename. CWE-22/98. |
 | `php-taint-sql-query` | §2 | ERROR | Request data flowing (indirectly) into a SQL query STRING. `focus-metavariable` pins the query position, so a parameterized call passing the value in the params array is NOT flagged. CWE-89. |
 
-**PHP taint rule count: 3.**
+| `py-taint-command-exec` | §16 | ERROR | External input (request/argv/input) -> os.system/os.popen/subprocess shell=True. Sanitizers shlex.quote/int. CWE-78. |
+| `py-taint-sql-query` | §2 | ERROR | Request flowing into a SQL query string; focus-metavariable spares parameterized execute(sql, params). CWE-89. |
+| `js-taint-command-exec` | §16 | ERROR | req.query/body/params flowing into child_process.exec/execSync. CWE-78. |
+
+**Taint rule count: 6** (3 PHP, 2 Python, 1 JS).
 
 ## Language coverage vs the baseline
 

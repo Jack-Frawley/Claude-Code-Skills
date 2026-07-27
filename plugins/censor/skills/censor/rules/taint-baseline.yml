@@ -1,4 +1,4 @@
-# Censor — PHP taint-tracking rules (semgrep CE `mode: taint`).
+# Censor — taint-tracking rules (semgrep CE `mode: taint`), PHP + Python + JS.
 # These catch request data that FLOWS to a dangerous sink across variable
 # assignments — the indirect case the single-pattern rules miss ($x = $_GET[..];
 # … exec($x)). Sanitizers keep them quiet on correctly-handled input.
@@ -104,3 +104,84 @@ rules:
               - pattern: $DB->query($Q)
               - pattern: $DB->exec($Q)
           - focus-metavariable: $Q
+
+  # ---------------------------------------------------------------------------
+  # §16 (Python) — request/argv reaching a shell command sink
+  # ---------------------------------------------------------------------------
+  - id: py-taint-command-exec
+    languages: [python]
+    mode: taint
+    severity: ERROR
+    message: >-
+      External input (web request / sys.argv / input()) flows into a shell command
+      (os.system/os.popen or subprocess with shell=True) — command injection. Use an argv list
+      without shell=True, or shlex.quote() each field (§16, CWE-78).
+    metadata: { baseline: "§16", category: command-injection, cwe: "CWE-78: OS Command Injection" }
+    pattern-sources:
+      - pattern: request.args.get(...)
+      - pattern: request.form.get(...)
+      - pattern: request.values.get(...)
+      - pattern: request.args[...]
+      - pattern: request.form[...]
+      - pattern: sys.argv[...]
+      - pattern: input(...)
+    pattern-sanitizers:
+      - pattern: shlex.quote(...)
+      - pattern: int(...)
+    pattern-sinks:
+      - pattern: os.system(...)
+      - pattern: os.popen(...)
+      - pattern: subprocess.run(..., shell=True, ...)
+      - pattern: subprocess.call(..., shell=True, ...)
+      - pattern: subprocess.Popen(..., shell=True, ...)
+      - pattern: subprocess.check_output(..., shell=True, ...)
+
+  # ---------------------------------------------------------------------------
+  # §2 (Python) — request flowing into a SQL query STRING (indirect)
+  # ---------------------------------------------------------------------------
+  - id: py-taint-sql-query
+    languages: [python]
+    mode: taint
+    severity: ERROR
+    message: >-
+      External input flows into a SQL query string (assigned then concatenated/%/format into the
+      query). Pass values as query parameters (execute(sql, params)), never build the query text
+      from input (§2, CWE-89).
+    metadata: { baseline: "§2", category: injection, cwe: "CWE-89: SQL Injection" }
+    pattern-sources:
+      - pattern: request.args.get(...)
+      - pattern: request.form.get(...)
+      - pattern: request.values.get(...)
+      - pattern: sys.argv[...]
+    pattern-sanitizers:
+      - pattern: int(...)
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: $CUR.execute($Q, ...)
+              - pattern: $CUR.execute($Q)
+              - pattern: $CUR.executemany($Q, ...)
+          - focus-metavariable: $Q
+
+  # ---------------------------------------------------------------------------
+  # §16 (JS) — request reaching child_process (indirect flow)
+  # ---------------------------------------------------------------------------
+  - id: js-taint-command-exec
+    languages: [javascript, typescript]
+    mode: taint
+    severity: ERROR
+    message: >-
+      Request data (req.query/body/params) flows into child_process.exec/execSync — command
+      injection. Use execFile/spawn with an argv array; never build a shell command from request
+      data (§16, CWE-78).
+    metadata: { baseline: "§16", category: command-injection, cwe: "CWE-78: OS Command Injection" }
+    pattern-sources:
+      - pattern: $REQ.query
+      - pattern: $REQ.body
+      - pattern: $REQ.params
+      - pattern: $REQ.query.$F
+      - pattern: $REQ.body.$F
+      - pattern: $REQ.params.$F
+    pattern-sinks:
+      - pattern: $CP.exec(...)
+      - pattern: $CP.execSync(...)
