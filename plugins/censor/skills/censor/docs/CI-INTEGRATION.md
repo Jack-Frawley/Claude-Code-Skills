@@ -63,10 +63,22 @@ Notes:
 - Start with **`--fail-on error`** (only the serious tier gates the build) and a
   `.censorignore` for any accepted findings, so the pipeline is green on day one
   and only new serious issues break it.
-- **Whole-scan vs new-only:** this gate trips on *any* qualifying finding in the
-  whole tree. A "fail only on findings new since the last green build" mode
-  (snapshot the JSON artifacts, diff on the next run) is a planned follow-up; for
-  now, `.censorignore` is how you accept the existing backlog.
+- **Adopting the gate over an existing backlog — `--baseline`:** by default the gate
+  trips on *any* qualifying finding, so a legacy codebase fails the first build on
+  its accumulated issues. Instead, accept the backlog once and gate only on *new*
+  findings:
+  ```
+  # one time — accept the current findings as the baseline, commit the file:
+  run_deterministic.sh --source . --baseline .censor-baseline.json --update-baseline
+  # every build after — fail only on findings NEW since that snapshot:
+  run_deterministic.sh --source . --baseline .censor-baseline.json --fail-on error
+  ```
+  Findings are fingerprinted by rule + path + line, so unrelated code elsewhere
+  doesn't resurrect a baselined finding. (semgrep CE doesn't expose a content
+  fingerprint — its `extra.fingerprint` is a gated placeholder — so editing a file
+  can make its baselined findings look new; that errs toward *failing*, which is
+  the safe direction, and you re-run `--update-baseline` after intentional edits.)
+  Re-baseline deliberately, in a reviewed commit, so the accepted set is auditable.
 - Stage 1 (probe) and Stage 1.5 (web-root inventory) are for **live/deployed**
   targets, not the CI checkout — run those against the running app or its document
   root, not the repo. `--source` is the CI-relevant input.

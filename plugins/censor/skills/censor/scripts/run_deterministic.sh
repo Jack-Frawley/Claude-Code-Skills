@@ -14,6 +14,8 @@ RULES_DIR="$SCRIPT_DIR/../rules"
 SRC=""; URL=""; OUT="./censor-out"
 SARIF=0            # --sarif: also emit SARIF (GitHub code-scanning / VS Code)
 FAIL_ON=""         # --fail-on error|high : exit non-zero if a finding at/above it (CI gate)
+BASELINE=""        # --baseline <file> : gate on findings NEW since this snapshot only
+UPDATE_BASELINE=0  # --update-baseline : (re)write the snapshot from this run, accept current state
 
 WEBROOT="${WEBROOT:-}"
 
@@ -28,7 +30,9 @@ while [ $# -gt 0 ]; do
     --out-dir) OUT="${2:-}"; shift 2 ;;
     --sarif)   SARIF=1; shift ;;
     --fail-on) FAIL_ON="$(printf '%s' "${2:-}" | tr '[:upper:]' '[:lower:]')"; shift 2 ;;
-    -h|--help) echo "usage: run_deterministic.sh [--source <path>] [--url <base-url>] [--webroot <document-root>] [--out-dir <dir>] [--sarif] [--fail-on error|high]"; exit 2 ;;
+    --baseline) BASELINE="${2:-}"; shift 2 ;;
+    --update-baseline) UPDATE_BASELINE=1; shift ;;
+    -h|--help) echo "usage: run_deterministic.sh [--source <path>] [--url <base-url>] [--webroot <document-root>] [--out-dir <dir>] [--sarif] [--fail-on error|high] [--baseline <file>] [--update-baseline]"; exit 2 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -111,44 +115,79 @@ echo " Next (skill Stage 3): read these + the flagged files for the LLM review,"
 echo " apply any .censorignore suppressions during synthesis, write the advisory."
 echo "================================================================"
 
-# ── CI gate ───────────────────────────────────────────────────────────────
-# --fail-on error : fail if a semgrep ERROR, any gitleaks secret, a web-root
-#                   CRITICAL, or a probe HIGH exists.
-# --fail-on high  : the above PLUS semgrep WARNING and web-root HIGH.
-# This is a WHOLE-scan gate. A "new findings only" diff against a stored baseline
-# is a planned follow-up (snapshot the JSON, compare on next run).
-if [ -n "$FAIL_ON" ]; then
-  gate=$(python - "$OUT" "$FAIL_ON" <<'PY' 2>/dev/null || echo "?"
+# ── CI gate + baseline diff ────────────────────────────────────────────────
+# --fail-on error : fail on a semgrep ERROR / any secret / web-root CRITICAL /
+#                   probe HIGH.  --fail-on high : + semgrep WARNING / web-root HIGH.
+# --baseline <f>  : gate only on findings NEW since snapshot <f> (each finding has
+#                   a stable fingerprint, so line drift does not resurrect it).
+#                   Lets a team turn the gate on over an existing backlog: accept
+#                   the backlog once (--update-baseline), then only new issues fail.
+# --update-baseline : (re)write <f> from this run and accept the current state.
+if [ -n "$FAIL_ON" ] || [ -n "$BASELINE" ] || [ "$UPDATE_BASELINE" = "1" ]; then
+  echo
+  # One python pass: build a per-finding fingerprint, optionally write/diff the
+  # baseline, print a human line, and emit "GATE <n>" for the shell to act on.
+  # NOTE: semgrep CE's extra.fingerprint is the placeholder "requires login" (a
+  # gated platform feature) — useless for identity — so fingerprints are built
+  # from rule:relpath:line. Line-based means editing a file can make baselined
+  # findings look new; that errs toward FAILING (safe for a security gate), and
+  # you re-baseline after intentional edits.
+  gate_out=$(python - "$OUT" "${FAIL_ON:-none}" "${BASELINE:-}" "$UPDATE_BASELINE" <<'PY'
 import json, os, sys
-outdir, level = sys.argv[1], sys.argv[2]
+outdir, level, baseline, do_update = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4] == "1"
 def load(p):
     p = os.path.join(outdir, p)
     if os.path.exists(p) and os.path.getsize(p) > 0:
         try: return json.load(open(p, encoding="utf-8"))
         except Exception: return None
     return None
-n = 0
-rules = load("rules.json") or {}
-for r in rules.get("results", []):
+def rel(p):
+    p = (p or "").replace("\\", "/")
+    return p.rsplit("/", 3)[-1] if p.count("/") > 3 else p
+findings = []  # (fingerprint, is_serious)
+for r in (load("rules.json") or {}).get("results", []):
     sev = (r.get("extra", {}) or {}).get("severity", r.get("severity", "")).upper()
-    if sev == "ERROR" or (level == "high" and sev in ("ERROR", "WARNING")):
-        n += 1
-sec = load("secrets.json")            # any redacted secret counts
-if isinstance(sec, list): n += len(sec)
-def sev_findings(doc, sevs):
-    return sum(1 for f in (doc or {}).get("findings", []) if f.get("severity", "").upper() in sevs)
-wr = load("webroot.json")
-n += sev_findings(wr, {"CRITICAL"} | ({"HIGH"} if level == "high" else set()))
-pr = load("probe.json")
-n += sev_findings(pr, {"HIGH"})
-print(n)
+    rid = r.get("check_id", "").split(".")[-1]
+    fp = f"semgrep:{rid}:{rel(r.get('path'))}:{r.get('start',{}).get('line')}"
+    findings.append((fp, sev == "ERROR" or (level == "high" and sev == "WARNING")))
+sec = load("secrets.json")
+if isinstance(sec, list):
+    for s in sec:
+        findings.append((f"secret:{s.get('RuleID')}:{rel(s.get('File'))}:{s.get('StartLine')}", True))
+for name, sevs in (("webroot.json", {"CRITICAL"} | ({"HIGH"} if level == "high" else set())),
+                   ("probe.json", {"HIGH"})):
+    for f in (load(name) or {}).get("findings", []):
+        findings.append((f"{name}:{f.get('check')}:{f.get('path','')}",
+                         f.get("severity", "").upper() in sevs))
+cur = {fp for fp, _ in findings}
+serious = {fp for fp, s in findings if s}
+base = set()
+if baseline and os.path.exists(baseline):
+    try: base = set(json.load(open(baseline, encoding="utf-8")).get("fingerprints", []))
+    except Exception: pass
+have_base = bool(baseline and os.path.exists(baseline))
+new_serious = (serious - base) if have_base else serious
+if do_update and baseline:
+    json.dump({"fingerprints": sorted(cur)}, open(baseline, "w", encoding="utf-8"), indent=0)
+    print(f"MSG baseline written: {len(cur)} finding(s) accepted -> {baseline}")
+    print("GATE -1")   # -1 = do not gate (snapshot run)
+elif have_base:
+    print(f"MSG {len(serious)} serious finding(s): {len(serious & base)} baselined, {len(new_serious)} new")
+    print(f"GATE {len(new_serious)}")
+else:
+    print(f"GATE {len(serious)}")
 PY
 )
-  echo
-  if [ "$gate" = "0" ]; then
-    echo "CI gate (--fail-on $FAIL_ON): PASS — no findings at/above '$FAIL_ON'."
-  else
-    echo "CI gate (--fail-on $FAIL_ON): FAIL — $gate finding(s) at/above '$FAIL_ON'." >&2
-    exit 3
+  echo "$gate_out" | grep '^MSG ' | sed 's/^MSG /  /'
+  gate=$(echo "$gate_out" | sed -n 's/^GATE //p')
+  if [ "$gate" = "-1" ]; then
+    :  # baseline snapshot run — not a gate
+  elif [ -n "$FAIL_ON" ]; then
+    if [ "${gate:-0}" = "0" ]; then
+      echo "CI gate (--fail-on $FAIL_ON${BASELINE:+, new-since-baseline}): PASS"
+    else
+      echo "CI gate (--fail-on $FAIL_ON${BASELINE:+, new-since-baseline}): FAIL — ${gate} finding(s) at/above '$FAIL_ON'." >&2
+      exit 3
+    fi
   fi
 fi
