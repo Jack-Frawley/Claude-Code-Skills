@@ -129,7 +129,7 @@ rules:
     patterns:
       # Any variable whose NAME looks like an identity/auth handle, assigned from
       # a cookie. Name-regex (not an explicit list) so it catches app-specific
-      # spellings ($ADUserName, $loggedInUser, $emp_user, …) without hardcoding
+      # spellings ($loggedInUser, $emp_user, $login_uid, …) without hardcoding
       # them — and stays identical between the private + public rulesets.
       - pattern: $VAR = <... $_COOKIE[...] ...>
       - metavariable-regex:
