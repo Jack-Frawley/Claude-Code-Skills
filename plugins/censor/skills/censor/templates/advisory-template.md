@@ -6,9 +6,15 @@ reproduced** — exposed secrets are named by `file:line` so you can find and ro
 Findings verified live are tagged **[VERIFIED LIVE]** (HTTP status/type only — no secret
 bodies were downloaded); everything else is static/source analysis.
 
-**Coverage:** <what actually ran — e.g. "source review (depth B) + live probe" or "URL only
-→ black-box, Stage 1 only">. **Not covered:** <gaps — e.g. "no source access; SQLi/auth
-model unverified"; missing scanners; etc.>
+**Coverage (read this before trusting the result):** <depth A/B/C + which stages ran — e.g.
+"depth C: probe + web-root inventory + semgrep/gitleaks + a 6-reviewer source audit">.
+**NOT covered / NOT a clean bill of health for:** <the dimensions you did not genuinely assess.
+If the reasoning review (depth B/C) did NOT run, state it outright: "deterministic scan only —
+access control / IDOR / CSRF / business-logic were NOT assessed." If the deployed document root
+was not enumerated, say so. If subagents couldn't spawn and this fell back to B (or A), say so.>
+This section is mandatory and must be honest — a scan that lists a few issues and implies the
+rest is fine manufactures false confidence. Absence of a finding in a dimension you did not
+examine is not evidence the dimension is safe.
 
 ---
 

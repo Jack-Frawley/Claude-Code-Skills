@@ -3,9 +3,11 @@ name: censor
 description: >-
   Audit a web application against a web security baseline and produce a
   severity-ranked, baseline-mapped findings advisory. Runs deterministic scans
-  (a read-only headers/TLS/exposed-path probe, semgrep baseline rules, and
-  gitleaks secret detection) plus an optional LLM source review at a chosen
-  depth. Use ONLY when the user explicitly asks to audit or security-review a
+  (a read-only headers/TLS/exposed-path probe, a web-root inventory, semgrep
+  baseline rules, and gitleaks secret detection) AND a reasoning source-review —
+  single-session or a parallel reviewer fleet — that finds the access-control,
+  IDOR, CSRF, and business-logic flaws the scanners cannot. The review is the
+  point, not an add-on. Use ONLY when the user explicitly asks to audit or security-review a
   site, scan a web app for vulnerabilities, or check code against the security
   baseline — or invokes /censor. Do NOT auto-invoke on incidental mentions of
   security, auth, or a single bug; this is a heavy, deliberate operation.
@@ -43,8 +45,20 @@ target, and never edits the audited code. Follow these steps in order.
    downloadable when they actually returned 404 — the probe caught it.)
 4. **Advisory goes off-repo by default.** It names live exposures; do not write it inside a
    git working tree unless the user insists. Default to the user's Desktop or a path they give.
-5. **Coverage honesty.** State exactly which stages/depth actually ran. If source is not
-   reachable, say the result is black-box only — never present a shallow pass as a deep review.
+5. **Coverage honesty — never call a site "clean" or "secure" from a partial run.** This is the
+   single most important rule. The deterministic scanners (probe, semgrep, gitleaks, web-root)
+   are a *floor*, not a complete audit: they cannot find IDOR, missing-authorization, CSRF gaps,
+   business-logic flaws, or eligibility-check gaps — those need the Stage-3 reasoning review. A
+   run that finds a handful of line-level issues and stops has audited **the mechanical layer
+   only**. Report exactly which stages/depth ran and, explicitly, **what was NOT checked**. If
+   the reasoning review (Step 3, depth B/C) did not run, say plainly: "deterministic scan only —
+   the access-control / CSRF / business-logic classes were not assessed; this is not a clean bill
+   of health." A scan that returns half the findings and implies "you're good" is worse than no
+   scan — it manufactures false confidence. When in doubt, under-claim coverage.
+6. **A real audit is depth C (or B), not depth A.** Depth A (scanners only) is a triage pass, not
+   an audit. To reproduce a thorough manual review, run the Stage-3 reasoning review — default to
+   the depth-C reviewer fleet when the environment can spawn subagents. Do not let a depth-A run
+   stand in for an audit.
 
 ## Step 0 — Check dependencies (and offer to install missing ones)
 
@@ -102,15 +116,25 @@ If the user did not already provide them, ask (this is the "opening prompt"):
   _This exists because a real run found `phpinfo.php` on its own but missed a downloadable
   credential file and a live API token — both had site-specific names, and both were only
   re-found because an earlier audit had named them._
-- **Depth** (default **B** if they don't care):
-  - **A — Deterministic only:** probe + semgrep + gitleaks → findings list. No LLM review.
-  - **B — Deterministic + guided review (default):** A, then you personally review the
-    flagged files and run the logic-bug checklist below in this session.
-  - **C — Deterministic + reviewer fleet:** A, then spawn parallel subagents (Task tool),
-    one per baseline dimension, over the source. Most thorough; needs a capable environment.
+- **Depth** — **when the user asks for "an audit" / "a security review" / "scan my site", that
+  means depth C** (or B if subagents can't spawn). Only drop to A if they explicitly want a quick
+  triage. Do not default to the cheapest option: the whole value of this skill over a bare
+  semgrep run is the reasoning review, and skipping it is how a scan comes back with half the
+  findings and wrongly implies "you're good."
+  - **A — Deterministic only:** probe + semgrep + gitleaks + web-root → findings list, NO reasoning
+    review. A **triage floor**, explicitly *not* an audit — cannot find IDOR/CSRF/logic flaws.
+    Never present an A run as a clean bill of health (guardrail 5).
+  - **B — Deterministic + guided review:** A, then you personally read the flagged files **and the
+    security-critical entry points** and work the full logic-bug checklist (Step 3) in this session.
+  - **C — Deterministic + reviewer fleet (recommended for a real audit):** A, then spawn parallel
+    subagents (Task tool), one per baseline dimension, each briefed as in Step 3. This is how the
+    reference manual audits were performed; it is the way to reproduce (or beat) them. Needs an
+    environment that can spawn subagents — if it can't, say so and fall back to B, not A.
 
-Record the coverage you will actually achieve (e.g. "source + URL, depth B" or "URL only →
-black-box, Stage 1 only").
+Record the coverage you will actually achieve (e.g. "source + URL + deployed doc-root, depth C").
+**If you cannot reach the deployed document root, or cannot run the reasoning review, state that
+as a gap in the advisory — a source-only or scanner-only pass is not the audit the site owner
+thinks they got.**
 
 ## Step 2 — Run the deterministic stages
 
@@ -177,30 +201,69 @@ PSScriptAnalyzer's security rules (tagged `[SECURITY]`).
 
 - **Depth A:** skip; go to Step 4 with the deterministic findings only.
 - **Depth B:** Read the files the deterministic stages flagged, plus the security-critical
-  entry points (auth, login/callback, DB layer, admin/data endpoints, upload handlers). Work
-  the **logic-bug checklist** — the classes static rules cannot judge:
+  entry points (auth, login/callback, DB layer, **every** admin/data/AJAX/`api/*` endpoint,
+  upload handlers, and the DB schema/migrations). Work the **logic-bug checklist** — the classes
+  static rules cannot judge. Don't just confirm the dimension exists; *investigate* it with the
+  technique noted, because these are the findings a scanner-only pass misses:
   1. **SQL injection** — is user input actually bound, or int-cast/whitelisted? Confirm real vs. safe.
-  2. **Access control / IDOR** — does every record read/write scope to the caller or an
-     explicit admin check? Are AJAX/`*_data.php`/`api/*` endpoints gated server-side, not just UI?
-  3. **Auth / session** — session fixation (regenerate id at login?), OAuth `state`, cookie
-     flags, and especially **any unsigned cookie / header trusted as identity** (auth bypass).
-  4. **Secrets / config exposure** — committed or web-served secrets; debug endpoints
-     (`phpinfo`, env dumps); does the web root serve `.txt`/`.json`/config as static files?
-  5. **XSS / output** — untrusted values echoed unescaped, or `innerHTML` string-built;
-     `href`/`src` from input without scheme-checking.
-  6. **File upload / traversal** — client filename trusted into a path; content validated;
-     download endpoints containing request paths.
-  7. **Command execution** — `exec`/`shell_exec`/`proc_open`/PowerShell built from request data.
-  8. **Dead / debug code** — stale `*_V1`/`*_old`/`Test` files still reachable; leftover
-     diagnostics.
-  9. **Headers / CSP / TLS** — from Stage 1.
-  10. **Error / info disclosure** — stack traces / SQL errors echoed; bootstrap `die()`
-      returning 200 instead of 503.
-  Reference `${CLAUDE_SKILL_DIR}/SECURITY_BASELINE.md` for the "why" and the fix pattern.
-- **Depth C:** Spawn one subagent per dimension above (Task tool), each briefed read-only with
-  the source path + the relevant baseline sections, returning structured findings. Then
-  dedupe across them. If the environment can't spawn subagents, tell the user and fall back
-  to Depth B.
+  2. **Access control / IDOR — the highest-yield reasoning check.** For every endpoint that
+     reads OR writes a record: is the record scoped to the caller, or is an `id` from the request
+     used directly? **Trace the WRITE path separately from the READ path** — a gated read
+     (`review.php` checks eligibility) does *not* mean the write is gated. If eligibility lives in
+     a shared helper or stored proc, **grep the whole schema/migrations to prove EVERY writer
+     routes through it** — in one real audit the worst logic bug was a save-record
+     stored proc that never called the eligibility function the read path used, letting any
+     authenticated user forge a record for anyone.
+     Small sequential IDs = trivial enumeration.
+  3. **CSRF (§4) — check explicitly; it is easy to miss because "nothing looks wrong."** Does
+     EVERY state-changing request (POST/PUT/DELETE, and anything that deletes/mails/exec's) carry
+     and verify a CSRF token? `grep -ri csrf` the app — if it returns nothing, that IS the
+     finding (the reference audit found an app with zero CSRF protection across 6 destructive
+     endpoints). Are there state changes reachable via GET? Is `SameSite` set?
+  4. **Missing eligibility / authorization gaps** — a sensitive action guarded only by a hidden
+     form field, a UI that hides a button, or a client-side check. Re-derive the gate server-side.
+     Endpoints that email/notify from a request-supplied recipient without an allowlist.
+  5. **Auth / session** — session fixation (regenerate id at login?), OAuth `state` verified,
+     cookie flags, and especially **any unsigned cookie / header trusted as identity** (auth
+     bypass). Does logout destroy the server-side session, not just clear a cookie?
+  6. **Secrets / config exposure + the DEPLOYED web root** — committed or web-served secrets;
+     debug endpoints (`phpinfo`, env dumps). **Enumerate the deployed document root, not just the
+     repo** (Stage 1.5): backups (`*.zip`/`_backups/`), data exports (`.csv`/`.xlsx`), `.sql`
+     dumps, token files, installers — these exist only in the served directory and are often the
+     single worst finding. Does the server serve `.txt`/`.json`/config as static files?
+  7. **XSS / output** — untrusted values echoed unescaped, or `innerHTML` string-built;
+     `href`/`src` from input without scheme-checking; framework escape-hatches (`Html.Raw`,
+     `dangerouslySetInnerHTML`, `th:utext`, `v-html`).
+  8. **File upload / traversal** — client filename trusted into a path; content validated by
+     bytes not extension; download endpoints containing request paths.
+  9. **Command / code execution** — `exec`/`shell_exec`/`proc_open`/`Runtime.exec`/`Process.Start`/
+     PowerShell built from request data; deserialization of untrusted data; SpEL/OGNL; XXE.
+  10. **Dead / debug code** — stale `*_V1`/`*_old`/`*Test` files still reachable (a `302` to login
+      is NOT removal — a forged cookie may skip it); leftover diagnostics; `DEBUG=true`.
+  11. **Headers / CSP / TLS** — from Stage 1, plus redirect-scheme downgrades and canonical host.
+  12. **Error / info disclosure** — stack traces / SQL errors echoed; bootstrap `die()` returning
+      200 instead of 503.
+  Reference `${CLAUDE_SKILL_DIR}/SECURITY_BASELINE.md` (§1–§20) for the "why" and the fix pattern.
+
+  **Before you conclude, run a completeness self-check** (this is the guard against a premature
+  "looks clean"): *Which of the 12 dimensions did I actually investigate vs. skim? Did I check the
+  WRITE path of every data endpoint, not just the read? Did I grep for CSRF? Did I enumerate the
+  DEPLOYED root, not the repo? What could a manual auditor still find that I didn't look for?*
+  Anything you did not genuinely assess goes in the advisory's coverage note as **not checked** —
+  never silently omitted.
+
+- **Depth C (recommended for a real audit):** Spawn one subagent per dimension above (Task tool),
+  running them in parallel. **Brief each reviewer properly** — a thin brief yields a thin review:
+  - the source path (+ the **deployed document-root path** for the web-root/secrets reviewer),
+  - the specific dimension(s) it owns and the investigative technique above (e.g. the IDOR
+    reviewer is told to trace write-vs-read and grep the migrations; the CSRF reviewer to grep the
+    whole app and treat *absence* as the finding),
+  - the relevant `SECURITY_BASELINE.md` sections, so it audits against the actual standard,
+  - the guardrails: **read-only, file:line never values, verify-before-alarming**, and *return
+    what it could NOT assess* alongside findings,
+  - a instruction to return structured findings (severity, file:line/URL, one-line exploit, fix, §).
+  Then dedupe across reviewers and run the same completeness self-check. If the environment can't
+  spawn subagents, say so and fall back to Depth B — **never silently downgrade to A.**
 
 ## Step 4 — Deduplicate, apply suppressions, rank
 
