@@ -68,6 +68,12 @@ missing tool (`winget` on Windows, `brew`/`pipx` on Mac/Linux).
 - **`MANUAL:` prefix** = no automatic install (e.g. curl/openssl ship with Git for Windows) —
   just surface the guidance.
 
+**Verify the install works — `bash ${CLAUDE_SKILL_DIR}/scripts/selftest.sh`.** It runs the real
+scan pipeline against a bundled known-bad corpus and confirms the expected rules fire (and that
+clean code stays silent, and gitleaks/probe/web-root load). Run it once after install, especially
+in a new environment: a scanner that silently returns zero findings is worse than none, and
+CI-green on someone else's repo does not prove it works on yours. Exit 0 = functioning.
+
 **Then degrade gracefully** with whatever is available, and record what actually ran in the
 final coverage note:
 - No `curl` → Stage 1 (probe) unavailable.

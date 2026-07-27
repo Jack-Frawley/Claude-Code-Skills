@@ -133,8 +133,25 @@ fi
 rm -rf "$WRTMP"
 echo
 
+# 3c) golden-scan selftest — runs the REAL scan path against the known-bad corpus
+# and asserts representative rules fire (the check CI's --validate/--test dodged).
+echo "3c) golden-scan selftest (real scan path vs known-bad corpus)"
+if ! have semgrep; then
+  skp "selftest needs semgrep"
+elif [ ! -f "$SCRIPTS/selftest.sh" ]; then
+  bad "selftest.sh missing"
+else
+  if bash "$SCRIPTS/selftest.sh" >/tmp/censor_selftest.out 2>&1; then
+    ok "selftest (known-bad fires, known-good silent, secret+stages ok)"
+  else
+    bad "selftest failed"
+    grep -E '\[FAIL\]' /tmp/censor_selftest.out 2>/dev/null | sed 's/^/      /'
+  fi
+fi
+echo
+
 echo "4) bash -n on all scripts"
-for s in check_deps.sh probe.sh scan_webroot.sh scan_rules.sh scan_secrets.sh run_deterministic.sh; do
+for s in check_deps.sh probe.sh scan_webroot.sh scan_rules.sh scan_secrets.sh run_deterministic.sh selftest.sh scan_sh.sh; do
   if [ -f "$SCRIPTS/$s" ]; then
     if bash -n "$SCRIPTS/$s" 2>/dev/null; then ok "parse $s"; else bad "parse $s"; fi
   else
