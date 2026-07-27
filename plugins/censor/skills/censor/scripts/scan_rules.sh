@@ -7,9 +7,21 @@
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# The rules DIRECTORY — semgrep loads every *.yml in it (PHP + Python + JS rulesets),
-# so new language rulesets are picked up automatically.
 RULES="$SCRIPT_DIR/../rules"
+
+# Load ONLY the top-level rule files. Do NOT point --config at the rules DIR:
+# semgrep recurses and loads every *.yml, including the fixtures under tests/ and
+# corpus/ (e.g. actions_ci.yml, clean_workflow.yml are GitHub Actions workflows,
+# not semgrep rules). One un-loadable yml makes semgrep declare the whole config
+# invalid and return ZERO findings — a silent false-clean. (Caught 2026-07-27: a
+# real scan of a known-bad site reported 0 because of corpus/clean_workflow.yml.)
+# New language rulesets dropped at the top level are still picked up automatically.
+NATIVE_CFG=(); DOCKER_CFG=()
+for _f in "$RULES"/*.yml; do
+  [ -f "$_f" ] || continue
+  NATIVE_CFG+=(--config "$_f")
+  DOCKER_CFG+=(--config "/rules/$(basename "$_f")")
+done
 
 SRC="${1:-}"
 if [ -z "$SRC" ] || [ "$SRC" = "-h" ] || [ "$SRC" = "--help" ]; then
@@ -31,11 +43,11 @@ fi
 
 run_native() {
   echo "Running semgrep baseline rules against: $SRC"
-  echo "Ruleset: $RULES"
+  echo "Ruleset: $RULES (${#NATIVE_CFG[@]} config flags)"
   echo
-  semgrep --quiet --config "$RULES" "$SRC" || true
+  semgrep --quiet "${NATIVE_CFG[@]}" "$SRC" || true
   if [ -n "$JSON_OUT" ]; then
-    semgrep --quiet --config "$RULES" "$SRC" --json --output "$JSON_OUT" || true
+    semgrep --quiet "${NATIVE_CFG[@]}" "$SRC" --json --output "$JSON_OUT" || true
     echo; echo "JSON written to: $JSON_OUT"
   fi
 }
@@ -54,10 +66,10 @@ run_docker() {
     src_dir="$(cd "$(dirname "$SRC")" && pwd)"; src_arg="/src/$(basename "$SRC")"
   fi
   docker run --rm -v "$rules_dir:/rules:ro" -v "$src_dir:/src:ro" \
-    semgrep/semgrep semgrep --quiet --config /rules "$src_arg" || true
+    semgrep/semgrep semgrep --quiet "${DOCKER_CFG[@]}" "$src_arg" || true
   if [ -n "$JSON_OUT" ]; then
     docker run --rm -v "$rules_dir:/rules:ro" -v "$src_dir:/src:ro" \
-      semgrep/semgrep semgrep --quiet --config /rules "$src_arg" --json 2>/dev/null > "$JSON_OUT" || true
+      semgrep/semgrep semgrep --quiet "${DOCKER_CFG[@]}" "$src_arg" --json 2>/dev/null > "$JSON_OUT" || true
     echo; echo "JSON written to: $JSON_OUT"
   fi
 }

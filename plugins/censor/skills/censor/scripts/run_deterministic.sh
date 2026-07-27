@@ -75,7 +75,10 @@ if [ -n "$SRC" ]; then
   if [ "$SARIF" = "1" ]; then
     if command -v semgrep >/dev/null 2>&1; then
       echo "--- SARIF: semgrep -> $OUT/semgrep.sarif ---"
-      semgrep --quiet --config "$RULES_DIR" --sarif --output "$OUT/semgrep.sarif" "$SRC" 2>/dev/null || true
+      # top-level rule files only — never --config the dir (it recurses into the
+      # tests/ + corpus/ .yml fixtures and returns an empty/invalid result).
+      scfg=(); for _f in "$RULES_DIR"/*.yml; do [ -f "$_f" ] && scfg+=(--config "$_f"); done
+      semgrep --quiet "${scfg[@]}" --sarif --output "$OUT/semgrep.sarif" "$SRC" 2>/dev/null || true
     fi
     if command -v gitleaks >/dev/null 2>&1; then
       echo "--- SARIF: gitleaks -> $OUT/gitleaks.sarif ---"
