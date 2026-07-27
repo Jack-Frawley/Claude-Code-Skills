@@ -41,14 +41,34 @@ else
   # `$DEBUG = true` once matched every `$x = true`. Fixtures missed it; a corpus
   # scan of real code caught it.)
   if [ -d "$RULES/corpus" ]; then
-    fp=$(semgrep --quiet --config "$RULES" "$RULES/corpus" --json 2>/dev/null \
+    # top-level rule files only. --config on the whole dir recurses into the
+    # tests/ + corpus/ .yml FIXTURES (Actions workflows, not rules); semgrep then
+    # calls the config invalid and returns 0 — which would make THIS leg pass
+    # vacuously (0 == "clean") no matter what. Load the real rule files instead.
+    cfg=(); for _f in "$RULES"/*.yml; do [ -f "$_f" ] && cfg+=(--config "$_f"); done
+    fp=$(semgrep --quiet "${cfg[@]}" "$RULES/corpus" --json 2>/dev/null \
          | python -c "import json,sys; print(len(json.load(sys.stdin).get('results',[])))" 2>/dev/null)
     if [ "$fp" = "0" ]; then
       ok "FP-corpus clean (0 findings on known-good code)"
     else
       bad "FP-corpus: ${fp:-?} finding(s) on clean code — likely an over-matching rule"
-      semgrep --quiet --config "$RULES" "$RULES/corpus" 2>/dev/null | sed 's/^/      /' | head -n 20
+      semgrep --quiet "${cfg[@]}" "$RULES/corpus" 2>/dev/null | sed 's/^/      /' | head -n 20
     fi
+
+    # 1c) POSITIVE CONTROL: the config must actually LOAD and fire. A .yml fixture
+    # under tests/corpus once made `--config <dir>` invalid, so every real scan
+    # returned 0 — a silent false-clean the corpus leg alone can't catch (0 looks
+    # clean). Assert a known-bad snippet yields >0 findings via the same config.
+    pcdir=$(mktemp -d)
+    printf '<?php\nphpinfo();\necho $_GET["q"];\n' > "$pcdir/bad.php"
+    pc=$(semgrep --quiet "${cfg[@]}" "$pcdir" --json 2>/dev/null \
+         | python -c "import json,sys; print(len(json.load(sys.stdin).get('results',[])))" 2>/dev/null)
+    if [ "${pc:-0}" -ge 1 ] 2>/dev/null; then
+      ok "positive control (config loads + fires: $pc findings on a bad snippet)"
+    else
+      bad "positive control: 0 findings on known-bad code — the ruleset failed to LOAD (invalid config?)"
+    fi
+    rm -rf "$pcdir"
   fi
 fi
 
