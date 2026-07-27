@@ -127,16 +127,14 @@ rules:
       baseline: "§5"
       category: broken-auth
     patterns:
-      - pattern-either:
-          - pattern: $user = <... $_COOKIE[...] ...>
-          - pattern: $username = <... $_COOKIE[...] ...>
-          - pattern: $userId = <... $_COOKIE[...] ...>
-          - pattern: $userid = <... $_COOKIE[...] ...>
-          - pattern: $userName = <... $_COOKIE[...] ...>
-          - pattern: $currentUser = <... $_COOKIE[...] ...>
-          - pattern: $loggedInUser = <... $_COOKIE[...] ...>
-          - pattern: $authUser = <... $_COOKIE[...] ...>
-          - pattern: $account = <... $_COOKIE[...] ...>
+      # Any variable whose NAME looks like an identity/auth handle, assigned from
+      # a cookie. Name-regex (not an explicit list) so it catches app-specific
+      # spellings ($ADUserName, $loggedInUser, $emp_user, …) without hardcoding
+      # them — and stays identical between the private + public rulesets.
+      - pattern: $VAR = <... $_COOKIE[...] ...>
+      - metavariable-regex:
+          metavariable: $VAR
+          regex: (?i)^\$(.*(user|uid|login|logon|account|acct|auth|admin|ident|princip|whoami|current_?u).*|u(id|name)?)$
 
   # ---------------------------------------------------------------------------
   # §9 — phpinfo() call left in the web root

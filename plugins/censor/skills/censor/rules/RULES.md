@@ -33,7 +33,7 @@ this line," which is an acceptable cost for a review tool.
 | `php-open-redirect` | §8 Transport | WARNING | `header()` built from `$_GET`/`$_POST`/`$_REQUEST`/`$_COOKIE` — open redirect / header injection; allowlist the target or use a same-origin path. CWE-601. |
 | `php-debug-constant-true` | §12 Info-disclosure | WARNING | `const DEBUG = true` / `define('DEBUG', true)` — app debug flag left on; typically switches error handlers to raw exception text (DSN, server, SQL errors). CWE-489/209. |
 
-**Rule count: 23 PHP+JS** (19 PHP, 4 JS/TS) + 11 Python + 5 Java + 6 C# + 3 Dockerfile + 3 GitHub-Actions + 3 PHP-taint = **53 total**
+**Rule count: 23 PHP+JS** (19 PHP, 4 JS/TS) + 11 Python + 5 Java + 6 C# + 3 Dockerfile + 3 GitHub-Actions + 3 PHP-taint = **54 total**
 (see the per-language sections below). Fixtures for the crypto/injection additions:
 `tests/php_unserialize.php`, `tests/php_ldap.php`, `tests/php_crypto.php`.
 
