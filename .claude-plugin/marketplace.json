@@ -8,6 +8,11 @@
       "name": "censor",
       "source": "./plugins/censor",
       "description": "Read-only web-app security auditor: black-box probe + semgrep baseline rules + gitleaks + optional LLM source review, producing a severity-ranked advisory. Invoke /censor."
+    },
+    {
+      "name": "vesper",
+      "source": "./plugins/vesper",
+      "description": "Vesper - govern unattended end-of-day work. Hand off work on your way out and it maximises what gets done without a human, never blocks on a question, defers what must wait, and leaves one committed resume point that a SessionStart hook surfaces the next morning. Invoke /vesper, /vesper full, /vesper resume, /vesper setup."
     }
   ]
 }
