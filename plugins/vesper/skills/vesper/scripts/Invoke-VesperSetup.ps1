@@ -293,47 +293,18 @@ if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot '.claude/settings.json')))
     $notes.Add("allowlist      : this repo has no '.claude/settings.json' - the return-leg hook is NOT installed here (Merge-VesperHooks.ps1 writes it there by default). Run it before trusting an unattended return.")
 }
 
-# --- install: record where THIS instance of Vesper is running from ---
-# SKILL.md's state-probe line reads `pwsh "<skill dir>/scripts/Get-VesperState.ps1"`
-# and names <skill dir> a placeholder to resolve - on the FIRST command of both
-# legs, so a failure to resolve it halts before any record of the evening
-# exists. Recording the actual directory here gives the running agent a second
-# way to find it (the first being "the directory this SKILL.md was read from");
-# the protocol prose itself falls back to the conventional
-# ~/.claude/skills/vesper location when neither is available.
+# --- install: where THIS instance of Vesper is running from ---
+# Needed below only to locate the bundled templates/queue.md - nothing else
+# reads it. It used to also be RECORDED into the config, as install.skillDir,
+# so the running agent had a second way to find SKILL.md's state-probe script
+# when the directory this SKILL.md was read from was not visible. That field
+# is retired: SKILL.md's probe line now names ${CLAUDE_SKILL_DIR}, a runtime
+# variable the harness itself resolves to the directory containing SKILL.md -
+# identically for a copied skill and a marketplace plugin install - so there
+# is no installation-specific path left for a config field to carry, and
+# Get-VesperConfig.ps1 refuses a config that still has one (see its retired-
+# keys section).
 $skillDir = (Resolve-Path -LiteralPath (Split-Path $PSScriptRoot -Parent)).Path
-
-# install.skillDir is ECHOED VERBATIM by the probe's `config` key, and probe
-# output goes into handoff files that get committed. An absolute path here is
-# therefore a machine-identifying string - it carries the account name - in a
-# file that leaves the machine. Task 7 fixed exactly this for
-# permissions.source[]; the config echo landed in a different task and kept the
-# raw path, so the same class of leak survived in the key next to it.
-#
-# Recorded as a LABEL, resolvable from either anchor a reader has:
-#   inside the repo -> repo-relative, resolved against the repo root
-#   under $HOME     -> '~/...', the same shape permissions.source[] uses
-#   anywhere else   -> absolute, because nothing else can name it
-# Forward slashes throughout so the value means the same thing on any platform.
-function ConvertTo-PortablePath {
-    param([string]$Full, [string]$Root)
-
-    $norm = { param($p) if ($p) { $p.Replace([char]92, [char]47).TrimEnd([char]47) } else { "" } }
-    $f = & $norm $Full
-    $r = & $norm $Root
-    $h = & $norm $HOME
-
-    if ($r -and $f.StartsWith("$r/", [System.StringComparison]::OrdinalIgnoreCase)) {
-        return $f.Substring($r.Length + 1)
-    }
-    if ($h -and $f.StartsWith("$h/", [System.StringComparison]::OrdinalIgnoreCase)) {
-        return '~/' + $f.Substring($h.Length + 1)
-    }
-    return $f
-}
-
-$skillDirLabel = ConvertTo-PortablePath -Full $skillDir -Root (Resolve-Path -LiteralPath $RepoRoot).Path
-$notes.Add("install        : setup running from '$skillDir', recorded as '$skillDirLabel'")
 
 $config = [ordered]@{
     projects    = [ordered]@{ root = '.'; filter = $filter }
@@ -341,7 +312,6 @@ $config = [ordered]@{
     graph       = $graph
     maintenance = [ordered]@{ queue = '.vesper/queue.md' }
     docs        = $docs
-    install     = [ordered]@{ skillDir = $skillDirLabel }
 }
 
 foreach ($n in $notes) { Write-Information "  $n" -InformationAction Continue }

@@ -23,22 +23,11 @@ let that deploy clear the gate.
 
 ## Sequence
 
-1. **Re-probe for what has moved in the repo.** Run:
-
-       pwsh "<skill dir>/scripts/Get-VesperState.ps1" -RepoRoot "<repo root>" -ConfigPath "<repo root>/.vesper/config.json" -Baseline <baseline from the handoff>
-
-   `<skill dir>` is wherever Vesper is installed - resolve it rather than
-   writing a repo-relative path here. This is the FIRST command of the leg, so
-   a path that is right for only one installation fails before anything else
-   has run. Use the directory this file was read from if that is visible;
-   otherwise read `install.skillDir` from `<repo root>/.vesper/config.json`,
-   written by `/vesper setup`; otherwise fall back to the conventional install
-   location, `~/.claude/skills/vesper`.
-
-   `-ConfigPath` is what points the probe at this repo's config; without it
-   the probe still exits 0 but every config-driven answer falls back to
-   built-in defaults, and the deploy gate you are about to present is then
-   describing a repo other than this one.
+1. **Re-probe for what has moved in the repo.** Run the state probe **exactly
+   as SKILL.md's "State probe" section states it**, adding `-Baseline
+   <baseline from the handoff>`. Do not retype the command or its path here -
+   see that section for the runnable form, the `${CLAUDE_SKILL_DIR}` variable
+   it resolves through, and why `-ConfigPath` matters.
 
    Check `baselineValid` first. If it is false, the sha was transcribed wrong
    out of the handoff - fix the transcription and re-run. Do NOT proceed on a

@@ -6,8 +6,11 @@
   reported in errors[] so a single broken probe cannot take down a departure
   sequence.
 .EXAMPLE
-  pwsh "<skill dir>/scripts/Get-VesperState.ps1" -RepoRoot "<repo root>" -ConfigPath "<repo root>/.vesper/config.json"
-  pwsh "<skill dir>/scripts/Get-VesperState.ps1" -RepoRoot "<repo root>" -ConfigPath "<repo root>/.vesper/config.json" -Baseline 4d843e9
+  pwsh ~/.claude/skills/vesper/scripts/Get-VesperState.ps1 -RepoRoot "<repo root>" -ConfigPath "<repo root>/.vesper/config.json"
+  pwsh ~/.claude/skills/vesper/scripts/Get-VesperState.ps1 -RepoRoot "<repo root>" -ConfigPath "<repo root>/.vesper/config.json" -Baseline 4d843e9
+
+  Inside SKILL.md itself the path is the ${CLAUDE_SKILL_DIR} runtime variable,
+  not a hand-typed location - see that file's "State probe" section.
 #>
 [CmdletBinding()]
 param(

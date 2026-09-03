@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Merge Vesper's hooks and probe permissions into an existing .claude/settings.json.
+  Merge Vesper's hooks into an existing .claude/settings.json.
 
 .DESCRIPTION
   Vesper's return leg lives in a SessionStart hook, not in the skill folder. Installing
@@ -19,8 +19,8 @@
   and a re-run must never silently discard that edit.
 
 .EXAMPLE
-  pwsh "<skill dir>/scripts/Merge-VesperHooks.ps1"
-  pwsh "<skill dir>/scripts/Merge-VesperHooks.ps1" -SettingsPath "<repo>/.claude/settings.json" -WhatIf
+  pwsh ~/.claude/skills/vesper/scripts/Merge-VesperHooks.ps1
+  pwsh ~/.claude/skills/vesper/scripts/Merge-VesperHooks.ps1 -SettingsPath "<repo>/.claude/settings.json" -WhatIf
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
@@ -162,12 +162,10 @@ if ($PSCmdlet.ShouldProcess($SettingsPath, "Merge Vesper hooks and permissions")
     foreach ($s in $skipped) { Write-Host "  - $s" }
 
     Write-Host ""
-    Write-Host "NEXT - two edits this script cannot make for you:" -ForegroundColor Yellow
-    Write-Host "  1. The PostToolUse hook contains PLACEHOLDER_PROJECT_A|PLACEHOLDER_PROJECT_B."
-    Write-Host "     Replace it with a regex matching your deployable project paths, or the"
-    Write-Host "     deploy guard never fires. If you have no deploy step, delete that hook."
-    Write-Host "  2. The two permission rules contain <skill dir>. Point them at wherever"
-    Write-Host "     you installed Get-VesperState.ps1, or the probe will prompt every run."
+    Write-Host "NEXT - one edit this script cannot make for you:" -ForegroundColor Yellow
+    Write-Host "  The PostToolUse hook contains PLACEHOLDER_PROJECT_A|PLACEHOLDER_PROJECT_B."
+    Write-Host "  Replace it with a regex matching your deployable project paths, or the"
+    Write-Host "  deploy guard never fires. If you have no deploy step, delete that hook."
     Write-Host ""
     Write-Host "Then verify with:  Get-Content `"$SettingsPath`" -Raw | ConvertFrom-Json"
 }

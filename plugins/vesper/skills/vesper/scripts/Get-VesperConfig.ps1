@@ -65,6 +65,9 @@ if ($cfg.ContainsKey('identity')) {
 if ($null -ne $cfg.graph -and $cfg.graph -is [hashtable] -and $cfg.graph.ContainsKey('command')) {
     throw "config carries graph.command, which is no longer part of the schema and was never read by anything. Delete it - a graph-refresh COMMAND is environment-specific and belongs in your maintenance queue file (maintenance.queue), where it survives a skill upgrade. graph.dir stays: that is what the staleness probe reads."
 }
+if ($cfg.ContainsKey('install')) {
+    throw 'config carries an ''install'' section, which is no longer part of the schema and was never read by anything. Delete it - SKILL.md''s state-probe line now names ${CLAUDE_SKILL_DIR}, a runtime variable resolved to wherever this skill is installed, so no config field is needed to record that path any more. Re-run /vesper setup to regenerate a current config.'
+}
 
 # --- projects ---
 if (-not $cfg.projects.ContainsKey('root') -or [string]::IsNullOrWhiteSpace($cfg.projects.root)) {

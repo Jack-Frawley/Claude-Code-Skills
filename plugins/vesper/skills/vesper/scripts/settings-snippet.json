@@ -1,13 +1,8 @@
 {
-  "//": "Vesper hooks + probe permissions. MERGE these into your .claude/settings.json -- do NOT paste this file over yours. Prefer Merge-VesperHooks.ps1, which merges idempotently and validates. /vesper setup offers to run it for you.",
+  "//": "Vesper hooks. MERGE these into your .claude/settings.json -- do NOT paste this file over yours. Prefer Merge-VesperHooks.ps1, which merges idempotently and validates. /vesper setup offers to run it for you.",
   "//1": "SessionStart carries the ENTIRE return leg. Without it, departure works and morning never comes.",
   "//2": "PostToolUse contains PLACEHOLDER_PROJECT_A|PLACEHOLDER_PROJECT_B -- replace with a regex matching YOUR deployable project paths, or the deploy guard never fires.",
-  "permissions": {
-    "allow": [
-      "Bash(pwsh \"<skill dir>/scripts/Get-VesperState.ps1\"*)",
-      "PowerShell(pwsh \"<skill dir>/scripts/Get-VesperState.ps1\"*)"
-    ]
-  },
+  "//3": "The probe's own permission is granted by SKILL.md's allowed-tools frontmatter (${CLAUDE_SKILL_DIR}), not by a rule here -- there is nothing to hand-edit for it.",
   "hooks": {
     "SessionStart": [
       {

@@ -1,6 +1,10 @@
 ---
 name: vesper
 description: Use when the user hands off work while leaving for the day - a departure cue ("heading home", "leaving for the day", "logging off", "before I go") combined in the same message with a continue-working instruction ("do as much as you can", "keep going", "finish X while I'm gone"). Also use on return ("I'm back", "morning", "picking this up") when an unresolved VESPER_HANDOFF.md exists. A departure cue alone must NOT fire this skill - there is nothing being handed off. Invoked explicitly as /vesper, /vesper full, /vesper resume, or /vesper setup.
+allowed-tools:
+  - Bash(pwsh -NoProfile -File ${CLAUDE_SKILL_DIR}/scripts/Get-VesperState.ps1 *)
+  - Bash(pwsh -NoProfile -File ${CLAUDE_SKILL_DIR}/scripts/Get-VesperConfig.ps1 *)
+  - Bash(pwsh -NoProfile -File ${CLAUDE_SKILL_DIR}/scripts/Invoke-VesperSetup.ps1 *)
 ---
 
 # Vesper
@@ -102,26 +106,27 @@ days.
 
 Both legs run:
 
-    pwsh "<skill dir>/scripts/Get-VesperState.ps1" -RepoRoot "<repo root>" -ConfigPath "<repo root>/.vesper/config.json" [-Baseline <sha>]
+    pwsh -NoProfile -File ${CLAUDE_SKILL_DIR}/scripts/Get-VesperState.ps1 -RepoRoot "<repo root>" -ConfigPath "<repo root>/.vesper/config.json" [-Baseline <sha>]
 
-`<skill dir>` is wherever Vesper is installed - resolve it, never write a
-repo-relative path here, because the path that is right for one installation is
-wrong for every other one. This is the FIRST command of both legs, so getting
-it wrong fails before any record of the evening exists - do not skip straight
-to a guess. Resolve it in this order:
+`${CLAUDE_SKILL_DIR}` is a runtime variable the harness resolves to the
+directory containing this file - identically for a copied skill and for a
+marketplace plugin install, so this line is never wrong for the installation
+it runs in. There is nothing to resolve and nothing to fall back to: the
+`allowed-tools` grant above names this same variable, so the two stay
+correct together.
 
-1. The directory containing the SKILL.md you are reading right now - whatever
-   surfaced this skill made that path visible, and it is authoritative when
-   available.
-2. `install.skillDir` in `<repo root>/.vesper/config.json`, if the config
-   exists - `/vesper setup` records the directory it ran from there for
-   exactly this purpose. It is stored as a PORTABLE LABEL, not a raw path,
-   because the probe echoes the whole config and handoff files get committed:
-   a value starting `~/` resolves against the home directory, anything else
-   relative resolves against the repo root, and only a path that is under
-   neither is stored absolute.
-3. The conventional install location, `~/.claude/skills/vesper`, if neither of
-   the above is available.
+**Issue this command exactly as written - no `cd` prefix, no added or
+reordered flags, no extra quoting.** The `allowed-tools` grant is a PREFIX
+rule matched against the literal command text once the variable is resolved:
+a compound form such as `cd "<repo root>" && pwsh ...` does not match the rule
+covering the plain form at all, and `cd` is seldom covered by a rule of its
+own - the rewrite turns a covered command into two uncovered ones and prompts
+at the very first step, before any record of the evening exists. `-RepoRoot`
+is what points the probe at the repo; the working directory is not.
+
+This is the FIRST command of both legs, so a mismatched flag or a dropped
+`-NoProfile`/`-File` fails before anything else has run - do not improvise a
+variant.
 
 **`-ConfigPath` is not optional in practice.** It is what points the probe at
 THIS repo's config; without it the probe still runs and still exits 0, but every

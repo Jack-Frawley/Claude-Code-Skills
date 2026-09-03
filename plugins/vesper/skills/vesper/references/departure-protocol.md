@@ -47,30 +47,11 @@ handoff.
    falsifiable in the morning. Do not ask a question - the user has walked
    away. Then continue immediately into step 2 in the same turn.
 
-2. **Probe.** Run:
-
-       pwsh "<skill dir>/scripts/Get-VesperState.ps1" -RepoRoot "<repo root>" -ConfigPath "<repo root>/.vesper/config.json"
-
-   `<skill dir>` is wherever Vesper is installed - resolve it. A repo-relative
-   probe path written into this file is right for exactly one installation and
-   wrong for every other one, and it is the FIRST command of the leg, so it
-   fails before anything else has run. Use the directory this file was read
-   from if that is visible; otherwise read `install.skillDir` from `<repo
-   root>/.vesper/config.json`, written by `/vesper setup`; otherwise fall back
-   to the conventional install location, `~/.claude/skills/vesper`.
-
-   **Issue that command exactly as written - no `cd` prefix, no absolute-path
-   rewrite, no `-NoProfile` or `-File` variant.** Allow rules are PREFIX rules,
-   so a compound form such as `cd "<repo root>" && pwsh ...` does not match the
-   rule covering the plain form at all, and `cd` is seldom covered by a rule of
-   its own - the rewrite turns a covered command into two uncovered ones and
-   prompts at the very first step, before any record of the evening exists.
-   `-RepoRoot` is what points the probe at the repo; the working directory is
-   not. `-ConfigPath` is what points it at this repo's config; drop it and the
-   probe still runs and still exits 0, but every config-driven answer - which
-   directories are projects, where a deploy script lives, whether there is a
-   graph at all - silently falls back to built-in defaults describing somebody
-   else's repo.
+2. **Probe.** Run the state probe **exactly as SKILL.md's "State probe"
+   section states it** - the runnable command, the `${CLAUDE_SKILL_DIR}`
+   variable it resolves through, and why it must be issued unmodified all live
+   there once, so there is exactly one place to keep them right. Do not
+   retype the command or its path here.
 
    Then read five things off it before doing anything else:
 
