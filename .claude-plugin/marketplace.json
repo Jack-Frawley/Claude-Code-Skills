@@ -3,6 +3,7 @@
   "owner": {
     "name": "Jack Frawley"
   },
+  "description": "Claude Code skills built from real IT and web-development work and sharpened by using them: a read-only web security auditor, and a protocol for handing work off unattended at the end of the day.",
   "plugins": [
     {
       "name": "censor",
