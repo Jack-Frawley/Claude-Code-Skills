@@ -8,7 +8,7 @@
 set -u
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SKILL="$HERE/../plugins/censor/skills/censor"
+SKILL="$HERE/../plugins/censor"
 RULES="$SKILL/rules"
 SCRIPTS="$SKILL/scripts"
 

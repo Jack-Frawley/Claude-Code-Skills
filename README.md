@@ -41,7 +41,7 @@ is an optional deepening layer.
    exposed-path list, via `curl`. Read-only; status codes only, never downloads response bodies
    (so an exposed secret file's contents are never captured).
 2. **Rules** (source, no LLM) — [`semgrep`](https://semgrep.dev) with the baseline encoded as
-   rules (`plugins/censor/skills/censor/rules/`), covering **PHP, Python, and JavaScript**;
+   rules (`plugins/censor/rules/`), covering **PHP, Python, and JavaScript**;
    [`gitleaks`](https://github.com/gitleaks/gitleaks) for in-tree secrets; and
    [PSScriptAnalyzer](https://github.com/PowerShell/PSScriptAnalyzer) for **PowerShell**
    (`.ps1`/`.psm1`). **The baseline is an executable ruleset**, not just a document. Every rule
@@ -84,7 +84,7 @@ If source isn't reachable, it degrades honestly to a black-box (Stage 1) pass an
 /plugin install censor
 ```
 
-**Quick (local, for testing):** copy `plugins/censor/skills/censor/` into `~/.claude/skills/`.
+**Quick (local, for testing):** copy `plugins/censor/` into `~/.claude/skills/`.
 
 ### Usage
 
@@ -105,7 +105,7 @@ Advisory-only — fixes happen in the owner's own session, by their choice.
 
 ### The baseline
 
-`plugins/censor/skills/censor/SECURITY_BASELINE.md` is a general, secure-by-default web-security
+`plugins/censor/SECURITY_BASELINE.md` is a general, secure-by-default web-security
 baseline (OWASP-shaped: secrets, prepared statements, output escaping, CSRF, session hardening,
 CSP, uploads, headers, error handling, failure-visibility, `/health`). The semgrep rules encode
 its statically-detectable items; `rules/RULES.md` maps each rule to a baseline section **and**

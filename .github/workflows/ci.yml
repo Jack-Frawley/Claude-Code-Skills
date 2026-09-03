@@ -25,7 +25,7 @@ jobs:
       - name: Validate all rulesets (rule syntax)
         run: |
           set -e
-          for f in plugins/censor/skills/censor/rules/*.yml; do
+          for f in plugins/censor/rules/*.yml; do
             echo "== validating $f =="
             if ! semgrep --validate --config "$f" > out.txt 2>&1; then
               cat out.txt
