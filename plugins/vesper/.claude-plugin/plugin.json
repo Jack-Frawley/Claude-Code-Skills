@@ -1,7 +1,7 @@
 {
   "name": "vesper",
-  "description": "Vesper - govern unattended end-of-day work. Hand off work on your way out; Vesper maximises what gets done without a human, never blocks on a question, defers what must wait, and leaves one committed resume point that a SessionStart hook surfaces the next morning. Invoke with /vesper, /vesper full, or /vesper resume.",
-  "version": "0.1.2",
+  "description": "Vesper - govern unattended end-of-day work. Hand off work on your way out; Vesper maximises what gets done without a human, never blocks on a question, defers what must wait, and leaves one committed resume point that a SessionStart hook surfaces the next morning. Invoke as /vesper:vesper, /vesper:vesper full, or /vesper:vesper resume (bare /vesper if installed as a copied skill).",
+  "version": "0.1.3",
   "author": {
     "name": "Jack Frawley"
   },

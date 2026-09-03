@@ -9,7 +9,8 @@ description: >-
   IDOR, CSRF, and business-logic flaws the scanners cannot. The review is the
   point, not an add-on. Use ONLY when the user explicitly asks to audit or security-review a
   site, scan a web app for vulnerabilities, or check code against the security
-  baseline — or invokes /censor. Do NOT auto-invoke on incidental mentions of
+  baseline — or invokes /censor:censor (bare /censor if installed as a copied skill).
+  Do NOT auto-invoke on incidental mentions of
   security, auth, or a single bug; this is a heavy, deliberate operation.
 allowed-tools:
   - Bash(${CLAUDE_SKILL_DIR}/scripts/check_deps.sh *)

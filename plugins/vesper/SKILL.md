@@ -1,6 +1,6 @@
 ---
 name: vesper
-description: Use when the user hands off work while leaving for the day - a departure cue ("heading home", "leaving for the day", "logging off", "before I go") combined in the same message with a continue-working instruction ("do as much as you can", "keep going", "finish X while I'm gone"). Also use on return ("I'm back", "morning", "picking this up") when an unresolved VESPER_HANDOFF.md exists. A departure cue alone must NOT fire this skill - there is nothing being handed off. Invoked explicitly as /vesper, /vesper full, /vesper resume, or /vesper setup.
+description: Use when the user hands off work while leaving for the day - a departure cue ("heading home", "leaving for the day", "logging off", "before I go") combined in the same message with a continue-working instruction ("do as much as you can", "keep going", "finish X while I'm gone"). Also use on return ("I'm back", "morning", "picking this up") when an unresolved VESPER_HANDOFF.md exists. A departure cue alone must NOT fire this skill - there is nothing being handed off. Invoked explicitly as /vesper:vesper (bare /vesper if installed as a copied skill), with full, resume, or setup sub-commands.
 allowed-tools:
   - Bash(pwsh -NoProfile -File ${CLAUDE_SKILL_DIR}/scripts/Get-VesperState.ps1 *)
   - Bash(pwsh -NoProfile -File ${CLAUDE_SKILL_DIR}/scripts/Get-VesperConfig.ps1 *)
@@ -18,10 +18,10 @@ Decide which leg is running, then read ONLY that leg's reference file.
 
 | Signal | Leg | Read |
 |---|---|---|
-| `/vesper` or auto-fire on departure + continue cues | Departure, standard mode | `references/departure-protocol.md` |
-| `/vesper full`, or "use the rest of the session" | Departure, extended mode | `references/departure-protocol.md` |
-| `/vesper resume`, or a return cue with an unresolved `VESPER_HANDOFF.md` | Resume | `references/resume-protocol.md` |
-| `/vesper setup` | Setup (attended) | `scripts/Invoke-VesperSetup.ps1` |
+| `/vesper:vesper` or auto-fire on departure + continue cues | Departure, standard mode | `references/departure-protocol.md` |
+| `/vesper:vesper full`, or "use the rest of the session" | Departure, extended mode | `references/departure-protocol.md` |
+| `/vesper:vesper resume`, or a return cue with an unresolved `VESPER_HANDOFF.md` | Resume | `references/resume-protocol.md` |
+| `/vesper:vesper setup` | Setup (attended) | `scripts/Invoke-VesperSetup.ps1` |
 
 The table above resolves WHICH LEG runs once the skill has legitimately fired.
 If the leg is still unclear at that point, check for `VESPER_HANDOFF.md` at the
@@ -46,7 +46,7 @@ leaving ("I'm leaving soon, what's left?").
 routing fallback above. Doubt about whether a handoff was made is never
 resolved by starting a departure run - a multi-hour autonomous session off a
 plain goodbye is a far worse failure than a missed trigger. Say goodbye and
-stop; the user can always type `/vesper`.
+stop; the user can always type `/vesper:vesper` (bare `/vesper` if installed as a copied skill).
 
 ## Precondition: edits must not prompt
 

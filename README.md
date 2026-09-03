@@ -12,6 +12,11 @@ real work and sharpened by using them. Each one is installable on its own.
 | **[Censor](#censor)** | Audits a web app against a security baseline and returns a severity-ranked advisory. Read-only. | `/plugin install censor` |
 | **[Vesper](#vesper)** | Governs unattended end-of-day work: hand off on your way out, get one clean resume point in the morning. | `/plugin install vesper` |
 
+Plugin skills are always namespaced `/plugin:skill`, so installed the way above, invoke
+them as `/censor:censor` and `/vesper:vesper` (sub-commands follow the skill name, e.g.
+`/vesper:vesper resume`). Copied straight into `~/.claude/skills/<name>/` instead (see each
+section's "Quick, for testing" note), the same skill is invoked bare — `/censor`, `/vesper`.
+
 ---
 
 ## Censor
@@ -89,9 +94,9 @@ If source isn't reachable, it degrades honestly to a black-box (Stage 1) pass an
 ### Usage
 
 ```
-/censor                       # opens: asks for target + depth
-/censor https://example.com   # black-box (Stage 1) if no source is given
-/censor ./path/to/source      # source review (Stages 2–3)
+/censor:censor                       # opens: asks for target + depth
+/censor:censor https://example.com   # black-box (Stage 1) if no source is given
+/censor:censor ./path/to/source      # source review (Stages 2–3)
 ```
 
 The advisory is written **off-repo by default** (it names live exposures), and secret values are
@@ -143,7 +148,7 @@ you resume rather than reconstruct.
 It fires only when a departure cue and a continue-working instruction arrive **in the same
 message**. A bare goodbye deliberately does nothing. A multi-hour autonomous session started
 off "see you tomorrow" is a far worse failure than a missed trigger, so when in doubt it
-stands down and you type `/vesper`.
+stands down and you type `/vesper:vesper`.
 
 ### What it will and won't do while you're gone
 
@@ -163,7 +168,7 @@ Almost everything environment-specific lives in one file, `.vesper/config.json`,
 for you:
 
 ```
-/vesper setup
+/vesper:vesper setup
 ```
 
 Setup is **attended by design** — the only part of Vesper permitted to ask questions. It
@@ -194,8 +199,8 @@ an inert deploy gate, an unmatched project filter, an unreadable settings file.
 
 Vesper's entire return leg lives in a `SessionStart` hook, because **a skill cannot fix a
 session it never loads in** — the morning you most need the reminder is a morning you opened
-Claude to work on something else, and the skill never fires. `/vesper setup` offers to install
-them; take the offer.
+Claude to work on something else, and the skill never fires. `/vesper:vesper setup` offers to
+install them; take the offer.
 
 ### Requirements
 
@@ -206,13 +211,14 @@ writes files, so under the default `ask` mode the run stops on a prompt with nob
 ### Usage
 
 ```
-/vesper           # departure, standard mode
-/vesper full      # departure, using the rest of the session budget
-/vesper resume    # work through the open handoff
-/vesper setup     # detect this repo and write .vesper/config.json (attended)
+/vesper:vesper           # departure, standard mode
+/vesper:vesper full      # departure, using the rest of the session budget
+/vesper:vesper resume    # work through the open handoff
+/vesper:vesper setup     # detect this repo and write .vesper/config.json (attended)
 ```
 
-**Quick (local, for testing):** copy `plugins/vesper/skills/vesper/` into `~/.claude/skills/`.
+**Quick (local, for testing):** copy `plugins/vesper/` into `~/.claude/skills/` — invoked
+bare as `/vesper` there.
 
 ## License
 

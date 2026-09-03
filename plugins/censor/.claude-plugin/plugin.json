@@ -1,7 +1,7 @@
 {
   "name": "censor",
-  "description": "Censor \u2014 audit a web app against a web security baseline and produce a severity-ranked, baseline-mapped findings advisory (read-only). Deterministic probe + semgrep + gitleaks, plus an optional depth-selectable LLM source review. Invoke with /censor.",
-  "version": "0.1.1",
+  "description": "Censor \u2014 audit a web app against a web security baseline and produce a severity-ranked, baseline-mapped findings advisory (read-only). Deterministic probe + semgrep + gitleaks, plus an optional depth-selectable LLM source review. Invoke as /censor:censor (bare /censor if installed as a copied skill).",
+  "version": "0.1.2",
   "author": {
     "name": "Jack Frawley"
   },
